@@ -19,7 +19,7 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 
 ## Epic 1 — 项目基础设施
 
-### PR #1: Backend 初始化
+### PR #1: Backend 初始化 ✅
 
 | 字段 | 内容 |
 |------|------|
@@ -27,13 +27,15 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 | **目标** | FastAPI 启动的基础骨架 |
 | **文件清单** | `backend/main.py`, `backend/app/__init__.py`, `backend/app/core/config.py`, `backend/requirements.txt`, `backend/.env.example` |
 | **交付标准** | `uvicorn app.main:app` 可启动，访问 `/health` 返回 `{"status": "ok"}` |
+| **完成日期** | 2026-07-11 |
+| **PR** | #1 |
 
 **详细任务**：
-- [ ] `backend/` 目录结构搭建
-- [ ] `core/config.py`：Pydantic Settings，支持 `.env` 加载（数据库、Redis、LLM 等配置）
-- [ ] `main.py`：FastAPI 应用，CORS 中间件，Health Check 路由
-- [ ] `requirements.txt`：FastAPI, uvicorn, pydantic-settings, python-dotenv, sqlglot, openai, langgraph, langchain, faiss-cpu, numpy, sqlalchemy, aiomysql, redis, pytest
-- [ ] `.env.example`：所有配置项模板（不含真实密钥）
+- [x] `backend/` 目录结构搭建
+- [x] `core/config.py`：Pydantic Settings，支持 `.env` 加载（数据库、Redis、LLM 等配置）
+- [x] `main.py`：FastAPI 应用，CORS 中间件，Health Check 路由
+- [x] `requirements.txt`：FastAPI, uvicorn, pydantic-settings, python-dotenv
+- [x] `.env.example`：所有配置项模板（不含真实密钥）
 
 > ⚠️ 不碰数据库、不碰 Agent、不碰前端
 
