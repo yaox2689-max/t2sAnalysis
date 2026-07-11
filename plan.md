@@ -15,9 +15,9 @@
 | 智能 Schema 检索 | 根据问题自动匹配相关表和字段，而非全量 Schema |
 | 多层 SQL 反思 | Parser → Validator → Executor → Error Analyzer 结构化修正 |
 | 多工具编排 | SQL 执行、图表生成、数据洞察，统一由 Agent 按需调用 |
-| 带证据的分析 | Explain Agent 给出结论时引用具体数据行做支撑 |
+| 带证据的分析 | Evidence Analyzer 给出结论时引用具体数据行做支撑 |
 | 纵深安全防护 | AST 分析 + 只读用户 + 运行时护栏，三层保障 |
-| 全链路日志 | 每个环节可追踪、可 Debug |
+| 全链路日志 | 每层可追踪，支持 Trace ID 串联 |
 | 评测体系 | Golden SQL + 自动化 Benchmark |
 
 ### 项目定位差异
@@ -40,11 +40,13 @@
 | Agent 引擎 | LangGraph | 有状态工作流 + Tool 调用编排 |
 | LLM | 通义千问 / GPT-4o | 根据场景切换 |
 | ORM & 数据 | SQLAlchemy + aiomysql | 异步 SQL 执行 |
-| 向量存储 | Redis | 会话记忆 + Schema Embedding 缓存 |
+| Schema 索引 | FAISS + 内存 | 表级/字段级向量索引，双路召回 |
+| 会话缓存 | Redis | Session 存储 + Cache |
 | 前端 | React + Ant Design + ECharts | 专业后台交互 |
 | SQL 分析 | sqlglot | AST 静态分析，阻断写入操作 |
-| Schema 检索 | Embedding + 关键词混合检索 | 问题驱动 Schema 召回 |
 | 评测 | pytest + 自定义 Benchmark | Golden SQL 自动化评测 |
+
+> 向量索引选型说明：Schema 数据量很小（几十张表），FAISS + 内存即可满足需求，无需 Redis Stack。Redis 仅承担 Session 和 Cache 职责。
 
 ---
 
@@ -59,7 +61,7 @@ User
 ┌──────────────────────────────────────────────────────────┐
 │                    SQL Agent                             │
 │                                                          │
-│  1. Journey Planning（拆解用户问题）                       │
+│  1. Task Analyzer（意图分析 + 参数提取）                   │
 │  2. Schema Retrieval（检索相关表结构）                     │
 │  3. SQL Generation（生成 SQL）                            │
 │  4. Safety Validation（AST 安全校验）                      │
@@ -68,7 +70,7 @@ User
 │  7. Result Processing（按需调用 Tool）                    │
 │     ├── Chart Tool（数据 → Python → ECharts Option）      │
 │     ├── Insight Tool（结果 → LLM → 总结）                 │
-│     └── Explain Tool（结论 → 引用数据 → 证据链）          │
+│     └── Evidence Analyzer（结论 → 引用数据 → 证据链）      │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -88,11 +90,13 @@ User: "分析一下最近30天各品类销售额趋势"
   ▼
 ┌─ SQL Agent ──────────────────────────────────────────────────┐
 │                                                               │
-│  Step 1: Journey Planning                                     │
-│  → 拆解意图: 需要查销售额、按品类分组、按天排序、画趋势图     │
+│  Step 1: Task Analyzer                                        │
+│  → task_type: trend_analysis                                  │
+│  → params: {time_range, metrics: [sales], dims: [category]}   │
+│  → requires: {chart: line, insight: true, evidence: false}    │
 │                                                               │
 │  Step 2: Schema Retrieval                                     │
-│  → 问题向量化 → Embedding 召回 Top-3 相关表                   │
+│  → 问题向量化 → FAISS 召回 Top-3 相关表                       │
 │  → 扩展 FK 关联表 → 构建 Schema Context                       │
 │  → 输出: 关联表 + 字段 + 示例数据                               │
 │                                                               │
@@ -110,16 +114,15 @@ User: "分析一下最近30天各品类销售额趋势"
 │                                                               │
 │  Step 6: Error Analysis & Retry (max 3次)                     │
 │  → Error Classifier → 类型判断:                               │
-│     ├── Unknown Column → Schema 不一致 → 重新 Retrieval       │
+│     ├── Schema Error → Schema 不一致 → 重新 Retrieval         │
 │     ├── Syntax Error → 直接修正 SQL                           │
 │     ├── Ambiguous → 补充上下文 → 重新生成                     │
 │     └── Other → LLM 分析 → 重试                               │
 │  → 回到 Step 4                                                │
 │                                                               │
 │  Step 7: Result Processing                                    │
-│  → 判断需要 Chart → Tool: Chart Tool                          │
-│  → 判断需要 Insight → Tool: Insight Tool                      │
-│  → 判断需要 Explain → Tool: Explain Tool                      │
+│  → Chart Tool: 数据分析 → line chart                          │
+│  → Insight Tool: LLM 总结 → 业务洞察                          │
 │                                                               │
 └───────────────────────────────────────────────────────────────┘
   │
@@ -131,6 +134,32 @@ User 收到: 趋势图 + 数据表 + 洞察结论
 
 ## 4. 核心模块详解
 
+### 4.0 Task Analyzer（原名 Journey Planning）
+
+用户问题进入后，第一件事不是生成 SQL，而是**分析任务类型**。它不涉及多步规划（planning），而是意图识别 + 参数提取。
+
+```python
+def analyze_task(question: str, chat_history: list) -> TaskPlan:
+    """
+    LLM 调用，输出结构化的任务分析结果。
+    这不是 "Agent Planning"——没有分解子任务、没有编排步骤。
+    而是回答：用户在问什么？需要查什么？要图吗？
+    """
+    # 输出示例:
+    {
+        "task_type": "trend_analysis",         # 趋势分析/对比分析/简单查询/...
+        "time_range": {"start": "2024-01-01", "end": "2024-01-30"},
+        "metrics": ["sales_amount"],
+        "dimensions": ["product_category"],
+        "requires_chart": True,
+        "chart_type_hint": "line",             # 供 Chart Tool 参考
+        "requires_insight": True,
+        "requires_evidence": False
+    }
+```
+
+> **命名说明**：不叫 Journey Planning 是因为这里没有真正的多步规划。Task Analyzer 更准确地描述了这个职责。
+
 ### 4.1 Schema Retriever（产品经理特别强调）
 
 这是 Text2SQL 最关键也最容易被忽视的模块。不把全量 Schema 塞进 Prompt，而是按需检索。
@@ -141,7 +170,7 @@ User 收到: 趋势图 + 数据表 + 洞察结论
 问题: "最近30天各品类销售额趋势"
   │
   ├── 关键词匹配: "销售额" → orders, payments, products
-  ├── Embedding 检索: 问题向量 → 表描述向量库 → Top-3
+  ├── FAISS 向量检索: 问题向量 → 表描述向量库 → Top-3
   └── FK 关系扩展: products ↔ category 等关联表
   │
   ▼
@@ -156,7 +185,7 @@ Schema Context (构建 Prompt 用):
 **Schema Index 设计**：
 
 ```python
-# 每个表和字段的描述向量索引
+# FAISS 向量索引，纯内存，无需额外中间件
 class SchemaIndex:
     table_embeddings: Dict[str, np.ndarray]  # 表名 → 向量
     column_embeddings: Dict[str, np.ndarray] # 字段名 → 向量
@@ -166,9 +195,12 @@ class SchemaIndex:
         # 1. 问题向量化
         q_vec = self.embed(question)
         # 2. 双路召回: 表级 + 字段级 向量相似度
-        # 3. 关联扩展: FK 关系
-        # 4. 排序去重 → 构建 Schema Context
+        # 3. 关键词匹配补充
+        # 4. 关联扩展: FK 关系
+        # 5. 排序去重 → 构建 Schema Context
 ```
+
+> **FAISS 选型说明**：Schema 数据量很小（几十张表），FAISS 内存索引即可。无需 Redis Stack 承担向量库职责。Redis 只做会话 Session 和结果缓存。
 
 ### 4.2 SQL Reflection Loop（结构化错误处理）
 
@@ -240,9 +272,9 @@ LLM Summarize:
 
 这是一个 **LLM summarize 调用**，不是 Agent。没有多步推理、没有工具调用、没有循环。
 
-### 4.5 Explain Agent（产品经理最推荐的模块 ✅）
+### 4.5 Evidence Analyzer（原名 Explain Tool ✅）
 
-这是区别于其他 Text2SQL 项目的核心设计。不只是"给答案"，而是"证明答案"。
+这是区别于其他 Text2SQL 项目的核心设计。不只是"给答案"，而是**证明答案**。改名是因为它做的是证据链分析，不是解释 SQL。
 
 ```
 用户: "为什么3月份销售额下降了？"
@@ -251,7 +283,7 @@ LLM Summarize:
 1. SQL Agent 执行分析查询
   │
   ▼
-2. Explain Tool 工作:
+2. Evidence Analyzer 工作:
    ├── 对比分析: 3月 vs 2月 各品类数据
    ├── 定位差异点: 哪些品类下降最多
    ├── 交叉验证: 关联订单量、客单价、退款率等多维数据
@@ -292,16 +324,16 @@ LLM Summarize:
 backend/
     prompts/
         sql_agent/
-            system.md           # SQL Agent 系统指令
-            sql_generation.md   # SQL 生成 Prompt
-            schema_retrieval.md # Schema 检索指令
-            journey_planning.md # 意图拆解指令
+            system.md              # SQL Agent 系统指令
+            sql_generation.md      # SQL 生成 Prompt
+            schema_retrieval.md    # Schema 检索指令
+            task_analyzer.md       # 任务分析指令
         reflection/
-            error_classifier.md # 错误分类 Prompt
-            sql_fix.md          # SQL 修正 Prompt
+            error_classifier.md    # 错误分类 Prompt
+            sql_fix.md             # SQL 修正 Prompt
         tools/
-            insight.md          # 数据洞察 Prompt
-            explain.md          # 解释分析 Prompt
+            insight.md             # 数据洞察 Prompt
+            evidence_analyzer.md   # 证据链分析 Prompt
 ```
 
 **版本管理**：每个 Prompt 文件头包含版本号和变更记录：
@@ -317,7 +349,7 @@ backend/
 
 ---
 
-## 6. 评测体系（产品经理强调）
+## 6. 评测体系
 
 ```
 backend/
@@ -360,26 +392,53 @@ backend/
 | Retry Count | 平均每次查询需要几次重试 |
 | Schema Recall | Schema Retriever 是否召回所有需要的表 |
 
+> 注意：具体数值（如 Schema Recall 准确率）需在跑完真实 Benchmark 后填写，README 中不写未经验证的数字。
+
 ---
 
-## 7. 全链路 Logging
+## 7. 全链路 Logging + Observability
+
+### Trace ID 串联
+
+每次请求生成唯一的 Trace ID，串联所有环节：
 
 ```
-User Message: "分析最近30天各品类销售趋势"
+Trace ID: tx_7f3a1b2c
   │
-  ├── [Intent]       journey_planning → 需要趋势图 + 分组聚合
-  ├── [Schema]       retrieved: orders, payments, products (score: 0.92, 0.87, 0.65)
-  ├── [SQL]          generated: SELECT ... (2.3s, tokens: 456)
-  ├── [Validator]    ast_check: passed (SELECT only)
-  ├── [Executor]     success: 30 rows in 1.2s
-  ├── [Chart]        generated: line chart (type: line, x: date, y: revenue)
-  ├── [Insight]      summary generated (85 tokens)
-  └── [Total]        5.8s, 3 LLM calls, 0 retries
+  ├── [Request]        POST /chat  params={memory_id: "abc", message: "..."}
+  │
+  ├── [Task Analyzer]  task_type=trend_analysis, LLM Call ID: llm_001 (2.1s, 312 tokens)
+  │
+  ├── [Schema Retrieval]  FAISS recall: orders(0.91), payments(0.87), products(0.62)
+  │
+  ├── [SQL Generation]  LLM Call ID: llm_002 (3.4s, 589 tokens)
+  │
+  ├── [Validator]      ast_check: passed
+  │
+  ├── [Executor]       30 rows in 1.2s, no truncation
+  │
+  ├── [Chart]          line chart generated
+  │
+  ├── [Insight]        LLM Call ID: llm_003 (1.8s, 234 tokens)
+  │
+  └── [Total]          8.5s, 3 LLM calls, 0 retries
 ```
 
-存储方式：
-- 开发阶段：标准日志文件 + 结构化 JSON
-- 生产可选：写入 ClickHouse / ELK 等
+### Observability 设计（面试加分项 ✅）
+
+| 能力 | 工具 | 说明 |
+|------|------|------|
+| Trace 追踪 | OpenTelemetry | 跨 LLM 调用、SQL 执行的分布式追踪 |
+| Prompt 调试 | LangSmith | 记录每次 LLM 调用的输入/输出、Token 消耗 |
+| 性能监控 | Phoenix / Grafana | LLM 延迟、SQL 执行时间、端到端响应分析 |
+
+当前实现：
+- 结构化 JSON 日志 + Trace ID
+
+未来可接入：
+- LangSmith Trace: 可视化每次 Agent 决策路径
+- Prompt Evaluation: 回归测试 Prompt 变更效果
+- Cost Analysis: 按用户/会话统计 Token 消耗
 
 ---
 
@@ -389,7 +448,7 @@ User Message: "分析最近30天各品类销售趋势"
 
 - [ ] FastAPI 项目初始化 + 配置管理
 - [ ] MySQL 电商数据集导入（Olist 数据集）
-- [ ] Schema Index 构建 + Schema Retriever
+- [ ] Schema Index (FAISS) 构建 + Schema Retriever
 - [ ] SQL Agent：生成 → 校验 → 执行 基础链路
 - [ ] 三层 SQL 安全沙箱
 - [ ] 基础 React 聊天界面
@@ -402,18 +461,18 @@ User Message: "分析最近30天各品类销售趋势"
 - [ ] Prompt 管理 + 版本化
 - [ ] 前端集成图表渲染
 
-### Phase 3：Explain + Eval（Week 5-6）
+### Phase 3：Evidence + Eval（Week 5-6）
 
-- [ ] Explain Tool 带证据链分析
+- [ ] Evidence Analyzer 带证据链分析
 - [ ] Golden SQL 测试集构建
 - [ ] Benchmark 自动化评测
-- [ ] 全链路 Logging
+- [ ] 全链路 Logging + Trace ID
 - [ ] 多轮对话 + 上下文管理
 
 ### Phase 4：工程完善（Week 7）
 
 - [ ] Docker Compose 一键部署
-- [ ] README + 演示文档
+- [ ] README + 演示文档 + 流程图
 - [ ] 单元测试 + 集成测试
 - [ ] 性能优化
 
@@ -436,17 +495,17 @@ t2sAnalysis/
 │   │   ├── tools/             # 工具函数（非 Agent）
 │   │   │   ├── chart.py       # Chart Tool
 │   │   │   ├── insight.py     # Insight Tool
-│   │   │   ├── explain.py     # Explain Tool
+│   │   │   ├── evidence_analyzer.py  # Evidence Analyzer
 │   │   │   ├── sql_executor.py    # SQL 执行器
 │   │   │   └── sql_validator.py   # SQL 安全校验
 │   │   ├── services/          # 业务逻辑
 │   │   │   ├── chat_service.py
-│   │   │   └── journey_planner.py
+│   │   │   └── task_analyzer.py   # 任务分析（原 Journey Planning）
 │   │   ├── repositories/      # 数据访问
 │   │   │   ├── schema_repository.py
 │   │   │   └── memory_repository.py
 │   │   ├── schemas/           # Schema 管理
-│   │   │   ├── schema_index.py    # Schema 索引构建
+│   │   │   ├── schema_index.py    # FAISS 索引构建
 │   │   │   └── schema_retriever.py # Schema 检索
 │   │   ├── models/            # Pydantic 模型
 │   │   │   ├── chat.py
@@ -485,31 +544,92 @@ t2sAnalysis/
 │   ├── package.json
 │   └── tsconfig.json
 │
-│
 ├── docker-compose.yml
 └── README.md
 ```
 
 ---
 
-## 10. 面试竞争力分析
+## 10. README 流程图（建议）
 
-| 维度 | 分数 | 关键设计 |
-|------|------|---------|
-| 架构设计 | ⭐⭐⭐⭐⭐ | 1 个 Agent + 多 Tool，不盲目拆 Agent。Graph 与 Agent 分离，职责清晰 |
-| 工程能力 | ⭐⭐⭐⭐⭐ | Prompt 版本管理、结构化 Reflection、评测体系、全链路 Logging |
-| AI 应用 | ⭐⭐⭐⭐⭐ | LangGraph StateGraph、Schema Embedding 检索、结构化错误分类 |
-| 创新性 | ⭐⭐⭐⭐☆ | Explain Agent + Evidence Chain、别于常见 Text2SQL 模板 |
-| 面试竞争力 | ⭐⭐⭐⭐⭐ | 定位 AI Data Analyst，面试官有深度可聊的话题：Agent 设计取舍、安全策略、评测方式 |
+```
+┌──────────────┐
+│  User Question │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│ Task Analyzer│
+│ (意图+参数)   │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│Schema Retrieval│
+│ (FAISS + 关键词)│
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│ SQL Generation│
+│ (LLM + Schema) │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐  失败   ┌──────────────────┐
+│    Validator  ├────────► Error Classifier │
+│ (sqlglot AST)│        │ (结构化分类修复)   │
+└──────┬───────┘        └────────┬─────────┘
+       │ 通过                    │ 重试 (max 3)
+       ▼                        │
+┌──────────────┐                │
+│   Executor   │◄───────────────┘
+│ (只读+超时)   │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────────────┐
+│   Result Processing   │
+│ ┌──────┐ ┌────────┐  │
+│ │Chart │ │Insight │  │
+│ │Tool  │ │Tool    │  │
+│ └──┬───┘ └───┬────┘  │
+│    │         │        │
+│    ▼         ▼        │
+│ ┌───────────────┐     │
+│ │   Evidence    │     │
+│ │   Analyzer    │     │
+│ └───────┬───────┘     │
+└─────────┼─────────────┘
+          │
+          ▼
+┌──────────────┐
+│   Answer +    │
+│ Chart + Data  │
+└──────────────┘
+```
 
 ---
 
-## 11. 面试常见问题预案
+## 11. 面试竞争力分析
+
+| 维度 | 说明 |
+|------|------|
+| 架构设计 | 1 个 Agent + 多 Tool，不盲目拆 Agent。Graph 与 Agent 分离，职责清晰 |
+| 工程能力 | Prompt 版本管理、结构化 Reflection、评测体系、全链路 Logging、Trace ID 串联 |
+| AI 应用 | LangGraph StateGraph、FAISS Schema 检索、结构化错误分类 |
+| 创新性 | Evidence Analyzer + Evidence Chain，定位 AI Data Analyst 而非 Text2SQL Demo |
+| 面试竞争力 | 面试官有深度可聊的话题：Agent 设计取舍、安全策略、评测方式、可观测性 |
+
+---
+
+## 12. 面试常见问题预案
 
 | 面试官可能会问 | 你的回答 |
 |--------------|---------|
 | 为什么不用 Supervisor？ | 当前只有 1 个 Agent，引入 Supervisor 徒增复杂度。设计原则：Agent 在必要时引入，而不是为了用而用 |
 | Chart 为什么是 Tool 不是 Agent？ | 图表类型判断 (line/bar/pie) 可以用特征工程 + 规则解决，不需要 LLM。Tool 更快、更可控、不消耗 Token |
 | Reflection Loop 为什么不直接 LLM 重试？ | 分类处理更工程化：Unknown Column 意味着 Schema 不一致，重试 SQL 没用，需要重新检索 Schema |
-| Schema Retriever 怎么保证召回率？ | 双路召回（关键词 + Embedding）+ FK 关系扩展。评测显示 Top-3 表准确率 92% |
-| 你这个和 Chat2DB 有什么区别？ | Chat2DB 偏工具，我们是 Agent 系统。最大的差异是 Explain + Evidence Chain |
+| Schema Retriever 召回率怎么样？ | 目前跑了 Benchmark 框架，具体数值还在评测中，支持 Execution Accuracy / Schema Recall / Latency 等指标 |
+| 你这个和 Chat2DB 有什么区别？ | Chat2DB 偏工具，我们是 Agent 系统。最大的差异是 Evidence Analyzer + Evidence Chain |
+| 用 FAISS 不用 Redis Stack 的原因？ | Schema 只有几十张表，FAISS 内存索引足够，不需要额外维护 Redis Stack。Redis 专注 Session 和 Cache |
