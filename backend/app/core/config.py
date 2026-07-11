@@ -31,15 +31,20 @@ class Settings(BaseSettings):
 
     # ── Database (MySQL) ─────────────────────────────────
     DB_HOST: str = "localhost"
-    DB_PORT: int = 3306
+    DB_PORT: int = 3307
     DB_USER: str = "root"
-    DB_PASSWORD: str = ""
+    DB_PASSWORD: str = "wangjita33"
     DB_NAME: str = "t2s_analysis"
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_TIMEOUT: int = 30
+    DB_POOL_RECYCLE: int = 1800
 
     # ── Redis ────────────────────────────────────────────
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
+    REDIS_MAX_CONNECTIONS: int = 10
 
     # ── LLM ──────────────────────────────────────────────
     LLM_API_KEY: str = ""
