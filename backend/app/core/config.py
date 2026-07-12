@@ -51,5 +51,9 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "gpt-4o"
     LLM_BASE_URL: str = ""
 
+    # ── SQL Executor ─────────────────────────────────────
+    SQL_TIMEOUT: int = 10
+    SQL_MAX_ROWS: int = 500
+
 
 settings = Settings()

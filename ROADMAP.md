@@ -31,17 +31,17 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 | **PR** | #1 |
 
 **详细任务**：
-- [x] `backend/` 目录结构搭建
-- [x] `core/config.py`：Pydantic Settings，支持 `.env` 加载（数据库、Redis、LLM 等配置）
-- [x] `main.py`：FastAPI 应用，CORS 中间件，Health Check 路由
-- [x] `requirements.txt`：FastAPI, uvicorn, pydantic-settings, python-dotenv
-- [x] `.env.example`：所有配置项模板（不含真实密钥）
+- [✔] `backend/` 目录结构搭建
+- [✔] `core/config.py`：Pydantic Settings，支持 `.env` 加载（数据库、Redis、LLM 等配置）
+- [✔] `main.py`：FastAPI 应用，CORS 中间件，Health Check 路由
+- [✔] `requirements.txt`：FastAPI, uvicorn, pydantic-settings, python-dotenv
+- [✔] `.env.example`：所有配置项模板（不含真实密钥）
 
 > ⚠️ 不碰数据库、不碰 Agent、不碰前端
 
 ---
 
-### PR #2: Frontend 初始化
+### PR #2: Frontend 初始化 ✅
 
 | 字段 | 内容 |
 |------|------|
@@ -49,20 +49,22 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 | **目标** | React + Ant Design 项目启动，展示基础页面 |
 | **文件清单** | `frontend/` 完整 React 项目 |
 | **交付标准** | 打开页面显示 "AI Data Analyst"，有简单的聊天输入框 |
+| **完成日期** | 2026-07-11 |
+| **PR** | #2 |
 
 **详细任务**：
-- [ ] 使用 Vite 初始化 React + TypeScript 项目
-- [ ] 安装 Ant Design、ECharts、axios
-- [ ] `App.tsx`：基础布局（侧边栏 + 主内容区）
-- [ ] `pages/Chat.tsx`：聊天页面（仅有 UI，无后端对接）
-- [ ] `services/api.ts`：axios 实例，配置 base URL
-- [ ] 代理配置（开发时转发 `/api` 到 FastAPI）
+- [✔] 使用 Vite 初始化 React + TypeScript 项目
+- [✔] 安装 Ant Design、ECharts、axios
+- [✔] `App.tsx`：基础布局（侧边栏 + 主内容区）
+- [✔] `pages/Chat.tsx`：聊天页面（仅有 UI，无后端对接）
+- [✔] `services/api.ts`：axios 实例，配置 base URL
+- [✔] 代理配置（开发时转发 `/api` 到 FastAPI）
 
 > ⚠️ 不实现聊天逻辑，不连接后端，不做复杂业务
 
 ---
 
-### PR #3: Docker Compose
+### PR #3: Docker Compose ✅
 
 | 字段 | 内容 |
 |------|------|
@@ -70,18 +72,20 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 | **目标** | 一键启动 MySQL + Redis + Backend |
 | **文件清单** | `docker-compose.yml`, `backend/Dockerfile` |
 | **交付标准** | `docker compose up` 后三个服务均可正常启动 |
+| **完成日期** | 2026-07-11 |
+| **PR** | #3 |
 
 **详细任务**：
-- [ ] `docker-compose.yml`：MySQL 8.0、Redis 7、Backend
-- [ ] `backend/Dockerfile`：多阶段构建
-- [ ] `.dockerignore`
-- [ ] 环境变量映射
+- [✔] `docker-compose.yml`：MySQL 8.0、Redis 7、Backend
+- [✔] `backend/Dockerfile`：多阶段构建
+- [✔] `.dockerignore`
+- [✔] 环境变量映射
 
 > ⚠️ 不包含 Frontend（开发阶段本地启动即可）
 
 ---
 
-### PR #4: 数据集初始化
+### PR #4: 数据集初始化 ✅
 
 | 字段 | 内容 |
 |------|------|
@@ -89,12 +93,14 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 | **目标** | Olist 电商数据导入 MySQL |
 | **文件清单** | `backend/scripts/init_db.py`, `backend/scripts/schema.sql` |
 | **交付标准** | 执行 `python scripts/init_db.py` 后，数据库包含完整 Olist 8 张表及数据 |
+| **完成日期** | 2026-07-11 |
+| **PR** | #4 |
 
 **详细任务**：
-- [ ] `schema.sql`：8 张表建表语句（orders, products, customers, payments, reviews, order_items, sellers, product_category）
-- [ ] `init_db.py`：下载或加载 Olist CSV → 建表 → 导入数据
-- [ ] 为每张表添加中文注释（方便后续 Schema Retrieval）
-- [ ] 创建只读用户 `analyst_ro`
+- [✔] `schema.sql`：8 张表建表语句（orders, products, customers, payments, reviews, order_items, sellers, product_category）
+- [✔] `init_db.py`：幂等初始化脚本（DROP → CREATE → INSERT → 校验）
+- [✔] 中文注释
+- [✔] 创建只读用户 `analyst_ro`
 
 > ⚠️ 不涉及 Agent、不涉及 API、纯粹的数据库初始化
 
@@ -102,7 +108,7 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 
 ## Epic 2 — 数据访问层
 
-### PR #5: Database 核心
+### PR #5: Database 核心 ✅
 
 | 字段 | 内容 |
 |------|------|
@@ -110,18 +116,20 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 | **目标** | 异步数据库连接管理 |
 | **文件清单** | `backend/app/core/database.py`, `backend/app/core/redis.py` |
 | **交付标准** | 单元测试可通过 `db.execute("SELECT 1")` |
+| **完成日期** | 2026-07-11 |
+| **PR** | #5 |
 
 **详细任务**：
-- [ ] `core/database.py`：`Database` 类，异步引擎 + Session 管理
-- [ ] `core/redis.py`：`RedisClient` 类，基础 get/set/delete
-- [ ] 连接池配置 + 健康检查
-- [ ] 单元测试
+- [✔] `core/database.py`：`Database` 类，异步引擎 + Session 管理
+- [✔] `core/redis.py`：`RedisClient` 类，基础 get/set/delete
+- [✔] 连接池配置 + 健康检查
+- [✔] 单元测试
 
 > ⚠️ 不写业务逻辑、不写 Schema、不写 Agent
 
 ---
 
-### PR #6: Schema Repository
+### PR #6: Schema Repository ✅
 
 | 字段 | 内容 |
 |------|------|
@@ -129,15 +137,15 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 | **目标** | 从 MySQL 读取表结构信息 |
 | **文件清单** | `backend/app/repositories/schema_repository.py` |
 | **交付标准** | `get_tables()` 返回所有表名和注释；`get_columns('orders')` 返回字段名、类型、注释 |
+| **完成日期** | 2026-07-11 |
+| **PR** | #6 |
 
 **详细任务**：
-- [ ] `get_tables()` — 查询 `information_schema.tables`
-- [ ] `get_columns(table)` — 查询 `information_schema.columns`
-- [ ] `get_foreign_keys()` — 查询 `information_schema.key_column_usage`
-- [ ] `get_sample_rows(table, n=3)` — 获取示例数据
-- [ ] 单元测试
-
-> ⚠️ 不涉及 Embedding、不涉及 FAISS、不涉及 LLM
+- [✔] `get_tables()` — 查询 `information_schema.tables`
+- [✔] `get_columns(table)` — 查询 `information_schema.columns`
+- [✔] `get_foreign_keys()` — 查询 `information_schema.key_column_usage`
+- [✔] `get_sample_rows(table, n=3)` — 获取示例数据
+- [✔] 单元测试
 
 ---
 
@@ -146,19 +154,21 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 | 字段 | 内容 |
 |------|------|
 | **Branch** | `feature/sql-executor` |
-| **目标** | 安全执行 SQL 并返回 DataFrame |
-| **文件清单** | `backend/app/tools/sql_executor.py` |
-| **交付标准** | `execute("SELECT * FROM orders LIMIT 5")` 返回 DataFrame |
+| **目标** | 安全执行 SQL 并返回统一 QueryResult |
+| **文件清单** | `backend/app/tools/sql_executor.py`, `backend/app/models/query.py` |
+| **交付标准** | `executor.execute("SELECT * FROM orders LIMIT 5")` 返回 `QueryResult` |
 
 **详细任务**：
-- [ ] `SafeExecutor` 类，接收已校验的 SQL
-- [ ] 超时控制（asyncio.timeout，默认 10s）
-- [ ] 行数限制（fetchmany，默认 500 行）
-- [ ] 截断通知（超过限制时标记）
-- [ ] 统一返回格式：`QueryResult(columns, rows, truncated, elapsed)`
-- [ ] 单元测试
+- [✔] `models/query.py`：`QueryResult(columns, rows, truncated, elapsed_ms)` — Pydantic BaseModel
+- [✔] `SafeExecutor` 类，接收已校验的 SQL
+- [✔] 超时控制（asyncio.timeout，来自 config `SQL_TIMEOUT`）
+- [✔] 行数限制（fetchmany(max_rows+1)，来自 config `SQL_MAX_ROWS`）
+- [✔] 截断通知（fetch 到 max_rows+1 条时 truncated=True）
+- [✔] 执行时间计量（elapsed_ms，float）
+- [✔] 异常包装（DatabaseError / TimeoutError / ExecutionError）
+- [✔] 单元测试
 
-> ⚠️ 不做 SQL 校验（那是 Validator 的事），不做 Agent
+> ⚠️ 不做 SQL 校验（那是 Validator 的事），不做 Agent，不修改 Database
 
 ---
 
