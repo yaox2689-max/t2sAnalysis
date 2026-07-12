@@ -48,8 +48,8 @@ class Settings(BaseSettings):
 
     # ── LLM ──────────────────────────────────────────────
     LLM_API_KEY: str = ""
-    LLM_MODEL: str = "gpt-4o"
-    LLM_BASE_URL: str = ""
+    LLM_MODEL: str = "deepseek-chat"
+    LLM_BASE_URL: str = "https://api.deepseek.com"
 
     # ── SQL Executor ─────────────────────────────────────
     SQL_TIMEOUT: int = 10
