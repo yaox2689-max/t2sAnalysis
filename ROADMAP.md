@@ -266,12 +266,12 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 | **交付标准** | 输入"销售额趋势" → 返回 orders, payments, products 的 Schema |
 
 **详细任务**：
-- [ ] `SchemaRetriever` 类，注入 `SchemaIndex`
-- [ ] 双路召回：FAISS 向量检索 + 关键词匹配
-- [ ] FK 关系扩展：加入关联表
-- [ ] 构建 `SchemaContext(tables, columns, relationships, sample_data)`
-- [ ] 排序去重，限制 Token 数
-- [ ] 单元测试
+- [✔] `SchemaRetriever` 类，注入 `SchemaIndex`
+- [✔] 双路召回：FAISS 向量检索 + 关键词匹配
+- [✔] FK 关系扩展：加入关联表
+- [✔] 构建 `SchemaContext(tables, columns, relationships, sample_data)`
+- [✔] 排序去重，限制 Token 数
+- [✔] 单元测试
 
 > ⚠️ 不修改 SQL 生成逻辑，不修改 Agent
 
