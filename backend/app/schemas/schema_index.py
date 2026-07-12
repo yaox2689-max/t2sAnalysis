@@ -98,6 +98,10 @@ class SchemaIndex:
 
     # ── Search ───────────────────────────────────────────
 
+    async def embed_query(self, text: str) -> list[float]:
+        """Embed a single query string into a float vector."""
+        return (await self._embed.embed([text]))[0]
+
     def search_tables(
         self, query_vec: list[float], top_k: int = 3
     ) -> list[tuple[TableMetadata, float]]:
