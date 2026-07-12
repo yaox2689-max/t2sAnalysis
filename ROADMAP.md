@@ -149,7 +149,7 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 
 ---
 
-### PR #7: SQL Executor
+### PR #7: SQL Executor ✅
 
 | 字段 | 内容 |
 |------|------|
@@ -174,7 +174,7 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 
 ## Epic 3 — SQL Core
 
-### PR #8: SQL Validator
+### PR #8: SQL Validator ✅
 
 | 字段 | 内容 |
 |------|------|
@@ -184,18 +184,18 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 | **交付标准** | `validate("SELECT * FROM orders")` → 通过；`validate("DROP TABLE orders")` → 拒绝 |
 
 **详细任务**：
-- [ ] 使用 sqlglot 解析 AST
-- [ ] 阻断所有非 SELECT 语句（INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE）
-- [ ] 递归检查子查询中是否有写入操作
-- [ ] 危险模式检测：无 WHERE 全表扫描、CROSS JOIN、左模糊 LIKE、ORDER BY RAND()
-- [ ] 返回结构化校验结果：`ValidationResult(passed, risk_level, warnings)`
-- [ ] 单元测试
+- [✔] 使用 sqlglot 解析 AST
+- [✔] 阻断所有非 SELECT 语句（INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE）
+- [✔] 递归检查子查询中是否有写入操作
+- [✔] 危险模式检测：无 WHERE 全表扫描、CROSS JOIN、左模糊 LIKE、ORDER BY RAND()
+- [✔] 返回结构化校验结果：`ValidationResult(passed, risk_level, warnings)`
+- [✔] 单元测试
 
 > ⚠️ 不负责执行 SQL，不负责生成 SQL
 
 ---
 
-### PR #9: Task Analyzer
+### PR #9: Task Analyzer ✅
 
 | 字段 | 内容 |
 |------|------|
@@ -205,16 +205,16 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 | **交付标准** | 输入"最近30天各品类销售额趋势" → 输出 `{task_type, metrics, dimensions, requires_chart}` |
 
 **详细任务**：
-- [ ] 编写 Prompt：`prompts/sql_agent/task_analyzer.md`
-- [ ] `TaskAnalyzer.analyze(question, history)` → 调用 LLM → 输出结构化 JSON
-- [ ] Pydantic 模型：`TaskPlan(task_type, time_range, metrics, dimensions, requires_chart, requires_insight)`
-- [ ] 单元测试（Mock LLM）
+- [✔] 编写 Prompt：`prompts/sql_agent/task_analyzer.md`
+- [✔] `TaskAnalyzer.analyze(question, history)` → 调用 LLM → 输出结构化 JSON
+- [✔] Pydantic 模型：`TaskPlan(task_type, time_range, metrics, dimensions, requires_chart, requires_insight)`
+- [✔] 单元测试（Mock LLM）
 
 > ⚠️ 不生成 SQL，不连接数据库，纯粹的 LLM + 结构化输出
 
 ---
 
-### PR #10: SQL Generation
+### PR #10: SQL Generation ✅
 
 | 字段 | 内容 |
 |------|------|
@@ -224,10 +224,10 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 | **交付标准** | LLM 能根据 Schema 信息生成可执行的 SELECT 语句 |
 
 **详细任务**：
-- [ ] 编写 Prompt：`prompts/sql_agent/sql_generation.md`
-- [ ] SQL 生成的 LLM 调用逻辑
-- [ ] 将 Schema Context 拼入 Prompt
-- [ ] 单元测试（Mock LLM，验证生成的 SQL 语法正确）
+- [✔] 编写 Prompt：`prompts/sql_agent/sql_generation.md`
+- [✔] SQL 生成的 LLM 调用逻辑
+- [✔] 将 Schema Context 拼入 Prompt
+- [✔] 单元测试（Mock LLM，验证生成的 SQL 语法正确）
 
 > ⚠️ 不执行 SQL，不做反思循环，不涉及 Task Analyzer 集成
 
