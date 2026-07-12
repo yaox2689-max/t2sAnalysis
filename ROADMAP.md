@@ -235,7 +235,7 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 
 ## Epic 4 — Schema Retrieval（亮点模块）
 
-### PR #11: Schema Index
+### PR #11: Schema Index ✅
 
 | 字段 | 内容 |
 |------|------|
@@ -245,12 +245,12 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 | **交付标准** | 初始化后 FAISS 索引包含所有表和字段的向量 |
 
 **详细任务**：
-- [ ] `SchemaIndex` 类
-- [ ] 从 Schema Repository 获取表/字段描述
-- [ ] 使用 Embedding Model 生成向量
-- [ ] 构建 FAISS 索引（表级 + 字段级）
-- [ ] 索引持久化（存本地文件，启动时加载）
-- [ ] 单元测试
+- [✔] `SchemaIndex` 类
+- [✔] 从 Schema Repository 获取表/字段描述
+- [✔] 使用 Embedding Model 生成向量
+- [✔] 构建 FAISS 索引（表级 + 字段级）
+- [✔] 索引持久化（存本地文件，启动时加载）
+- [✔] 单元测试
 
 > ⚠️ 不做检索逻辑，不做 LLM 调用
 
