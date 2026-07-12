@@ -10,6 +10,8 @@ Usage:
     result = await db.execute("SELECT 1")
 """
 
+from typing import Optional
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
@@ -51,7 +53,7 @@ class Database:
         await self._engine.dispose()
         self._engine = None
 
-    async def execute(self, sql: str) -> list[dict]:
+    async def execute(self, sql: str, params: Optional[tuple] = None) -> list[dict]:
         """Execute a raw SQL query and return rows as dicts.
 
         This is a low-level helper for the Repository layer.
@@ -62,7 +64,7 @@ class Database:
 
         async with self._engine.connect() as conn:
             conn: AsyncConnection
-            result = await conn.execute(text(sql))
+            result = await conn.execute(text(sql), params)
             rows = result.fetchall()
             columns = list(result.keys())
             return [dict(zip(columns, row)) for row in rows]
