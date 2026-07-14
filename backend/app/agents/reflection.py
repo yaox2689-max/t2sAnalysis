@@ -85,16 +85,24 @@ class ReflectionStep:
 
 
 class ReflectionResult:
-    """Final result of the reflection loop."""
+    """Final result of the reflection loop.
+
+    *next_action* tells the LangGraph Workflow what to do next:
+    - ``retry_generate`` — re-run SQL generation (for syntax/ambiguous errors)
+    - ``retry_retrieve`` — re-retrieve schema + re-generate (for schema errors)
+    - ``stop`` — give up, return current state
+    """
 
     def __init__(
         self,
         success: bool,
         final_sql: str = "",
+        next_action: str = "stop",
         attempts: Optional[list[ReflectionStep]] = None,
     ) -> None:
         self.success = success
         self.final_sql = final_sql
+        self.next_action = next_action
         self.attempts = attempts or []
 
 
@@ -208,17 +216,39 @@ class ReflectionLoop:
                 return ReflectionResult(
                     success=True,
                     final_sql=gen_result.sql,
+                    next_action="stop",
                     attempts=attempts,
                 )
 
             current_sql = gen_result.sql if gen_result else current_sql
             current_error = gen_result.explanation if gen_result else current_error
 
+        # Determine what the graph should do next
+        next_action = self._resolve_next_action(attempts)
         return ReflectionResult(
             success=False,
             final_sql=current_sql,
+            next_action=next_action,
             attempts=attempts,
         )
+
+    @staticmethod
+    def _resolve_next_action(attempts: list[ReflectionStep]) -> str:
+        """Resolve the next_action based on the last error type.
+
+        Tells the LangGraph Workflow what to do:
+        - ``retry_retrieve`` → schema was wrong, re-retrieve + re-generate
+        - ``retry_generate`` → SQL was wrong, re-generate only
+        - ``stop`` → give up
+        """
+        if not attempts:
+            return "stop"
+        last = attempts[-1].error_type
+        if last == "schema_error":
+            return "retry_retrieve"
+        if last in ("syntax_error", "ambiguous"):
+            return "retry_generate"
+        return "stop"
 
     # ── Handlers ─────────────────────────────────────────
 
