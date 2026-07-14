@@ -302,15 +302,41 @@ Week 4:  PR18 ~ PR20 工程化（评测、日志、Prompt 管理、Release）
 |------|------|
 | **Branch** | `feature/langgraph-workflow` |
 | **目标** | 将已完成模块编排为完整 SQL Agent 工作流 |
-| **文件清单** | `backend/app/agents/state.py`, `backend/app/graph/graph.py`, `backend/app/graph/nodes.py` |
+| **文件清单** | `backend/app/agents/state.py`, `backend/app/graph/graph.py`, `backend/app/graph/nodes.py`, `backend/app/graph/routers.py` |
 | **交付标准** | `graph.invoke({"question": "销售额趋势"})` → 端到端输出包含 SQL 和结果 |
 
+**AgentState**：
+- `question`, `history` — 原始输入
+- `task_plan`, `schema_context`, `generated_sql`, `validation_result`, `query_result`, `reflection_result` — 模块输出（`| None`）
+- `current_sql: str | None` — 当前最新 SQL，可能被 Reflection 修改
+- `retry_count`, `max_retries` — 重试配置
+- `errors: list[str]` — 错误记录
+
+**节点**（薄节点，不承载业务逻辑）：
+- `analyze_task_node` → `TaskAnalyzer.analyze()`
+- `retrieve_schema_node` → `SchemaRetriever.retrieve()`
+- `generate_sql_node` → `SQLGenerator.generate()`
+- `validate_sql_node` → `SQLValidator.validate()`
+- `execute_sql_node` → `SafeExecutor.execute()`
+- `reflect_node` → `ReflectionLoop.run()`，返回 `next_action`（`retry_generate` / `retry_retrieve` / `stop`）
+
+**路由**（Router 函数，不写在 Graph 中）：
+- `route_after_validate(state)` → `"execute"` 或 `"reflect"`
+- `route_after_execute(state)` → `"end"` 或 `"reflect"`
+- `route_after_reflection(state)` → `"generate"`、`"retrieve"` 或 `"end"`
+
+**架构约束**：
+- Workflow 仅负责节点编排。每个 Node 仅做：从 AgentState 读取 → 调用对应模块 → 写回 AgentState。
+- 禁止在 Graph 中编写 Prompt、SQL、数据库查询、Reflection 策略。
+- 所有模块通过 `build_graph(analyzer=..., retriever=..., ...)` 依赖注入，不在 Node 内 new 对象。
+- Graph 代码不超过 100 行。
+
 **详细任务**：
-- [ ] `AgentState`：统一 State（question, task_plan, schema_context, generated_sql, validation, query_result, retry_count）
-- [ ] `StateGraph`：节点编排（TaskAnalyzer → Retriever → Generator → Validator → Executor → Reflection）
-- [ ] 条件路由：Validator 失败 → Reflection；Executor 失败 → Reflection
-- [ ] Retry 控制：最多 3 次，超出则终止
-- [ ] 节点生命周期：每个节点只读写 State 的特定字段
+- [ ] `AgentState` 定义（含 `current_sql`、`retry_count`、`max_retries`）
+- [ ] 薄节点函数（依赖注入，不 new 对象）
+- [ ] `StateGraph` 构建 + 条件路由
+- [ ] Reflection 返回 `next_action`，Graph 据此路由
+- [ ] Router 函数（condition）
 - [ ] 单元测试（Mock 各节点）
 
 > ⚠️ 不包含 Chart、Insight、Evidence、PromptLoader

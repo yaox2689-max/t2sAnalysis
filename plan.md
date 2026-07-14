@@ -77,9 +77,22 @@ User
 
 ### 架构原则
 
-**Workflow（LangGraph）只负责节点编排，不承载业务逻辑。** 所有业务能力必须封装在独立的 Repository、Service、Tool 或 Agent 节点中。
+**Workflow（LangGraph）只负责节点编排（Orchestration），不承载业务逻辑。** 
 
-Workflow 节点是薄的 — 每个节点只读写 State 的特定字段，不做 LLM 调用、不做数据库查询。
+每个 Node 仅负责：
+- 从 AgentState 读取输入
+- 调用对应模块
+- 写回 AgentState
+
+**禁止**：
+- 编写 Prompt
+- 编写 SQL
+- 查询数据库
+- 执行业务逻辑
+- 直接访问 Repository
+- 实现 Reflection 策略
+
+所有业务能力必须保留在已有模块中，Workflow 只是胶水层（Glue Layer）。
 
 ```
 Repository 负责数据来源        → SchemaRepository.get_columns()
@@ -108,45 +121,41 @@ User: "分析一下最近30天各品类销售额趋势"
 │  START                                                       │
 │    │                                                         │
 │    ▼                                                         │
-│  Node 1: Task Analyzer                                       │
-│  → task_type: trend_analysis                                 │
-│  → params: {time_range, metrics: [sales], dims: [category]}  │
-│  → requires: {chart: line, insight: true, evidence: false}   │
-│    │                                                         │
+│  analyze_task_node         [TaskAnalyzer]                    │
+│    │                        → task_plan                      │
 │    ▼                                                         │
-│  Node 2: Schema Retrieval                                    │
-│  → 问题向量化 → FAISS 召回 Top-3 相关表                      │
-│  → 扩展 FK 关联表 → 构建 Schema Context                      │
-│  → 输出: 关联表 + 字段 + 示例数据                              │
-│    │                                                         │
+│  retrieve_schema_node      [SchemaRetriever]                 │
+│    │                        → schema_context                 │
 │    ▼                                                         │
-│  Node 3: SQL Generation                                      │
-│  → Schema Context + 用户问题 + Few-shot → LLM → SQL          │
-│    │                                                         │
+│  generate_sql_node         [SQLGenerator]                    │
+│    │                        → generated_sql, current_sql     │
 │    ▼                                                         │
-│  Node 4: Safety Validation                                   │
-│  → sqlglot AST 解析 → 检查只读 → 检查危险模式 → 结果          │
+│  validate_sql_node         [SQLValidator]                    │
+│    │                        → validation_result              │
 │    │                                                         │
-│    ├── 失败 ──► Node 6: Reflection                           │
-│    │              │                                           │
-│    ▼             ├── Schema Error → Node 2(重新检索)         │
-│  Node 5: SQL Execution    ├── Syntax Error → LLM 修正        │
-│  → 只读用户执行 → 超时10s  └── Ambiguous → 补充上下文 → 重试  │
-│  → 限 500 行 → DataFrame         │                            │
-│    │                             └── max 3次 → Node 3/4/5    │
-│    ├── 成功 → Node 7                                         │
-│    └── 失败 → Node 6 (同上)                                   │
-│         │                                                     │
-│         ▼                                                     │
-│  Node 7: Result Processing                                    │
-│  → Chart Tool: 数据分析 → line chart                          │
-│  → Insight Tool: LLM 总结 → 业务洞察                          │
-│    │                                                          │
-│  END                                                          │
+│    ├── passed ─────────────────────────────► execute_sql_node│
+│    │              [SafeExecutor]            → query_result   │
+│    │                                         │               │
+│    │             成功 ──────────────────────► END            │
+│    │             失败 ──► reflect_node       │               │
+│    │                                                         │
+│    └── failed ────────────────────────────► reflect_node     │
+│                    [ReflectionLoop]                           │
+│                      → reflection_result                     │
+│                      → next_action (retry_generate /         │
+│                            retry_retrieve / stop)            │
+│                         │                                    │
+│          ┌── retry_generate ──► retry++ ──► generate_sql_node│
+│          │                                      (retry<3)    │
+│          ├── retry_retrieve ──► retry++ ──► retrieve_...     │
+│          │                                      (retry<3)    │
+│          └── stop ──────────────────────────► END            │
+│                                                              │
+│  ─── END ────────────────────────────────────────────────────│
 └──────────────────────────────────────────────────────────────┘
   │
   ▼
-User 收到: 趋势图 + 数据表 + 洞察结论
+User 收到: 查询结果
 ```
 
 ---
