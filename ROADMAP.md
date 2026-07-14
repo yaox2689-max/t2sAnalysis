@@ -1,6 +1,6 @@
 # AI Data Analyst — 开发路线图
 
-> 6 个 Epic，18 个 Feature Branch，18 个 PR。
+> 7 个 Epic，20 个 Feature Branch，20 个 PR。
 > 每个 PR 可独立 Review、独立 Merge，main 始终保持可运行。
 
 ---
@@ -8,16 +8,17 @@
 ## 开发节奏
 
 ```
-Week 1:  PR1 ~ PR4  基础设施（项目能启动、数据库能跑）
-Week 2:  PR5 ~ PR8  SQL 核心（SQL 能执行且安全）
-Week 3:  PR9 ~ PR13  Agent 主链路（Task Analyzer → SQL Generation → Reflection）
-Week 4:  PR14 ~ PR16 结果处理（Chart/Insight/Evidence）
-Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
+Week 1:  PR1 ~ PR8   基础设施（项目初始化 → 数据访问 → SQL 核心）
+Week 2:  PR9 ~ PR13  Agent 基础链路（Task → Retrieval → Generation → Reflection）
+Week 3:  PR14 ~ PR17 Workflow 编排 + 结果处理（Chart/Insight/Evidence）
+Week 4:  PR18 ~ PR20 工程化（评测、日志、Prompt 管理、Release）
 ```
 
 ---
 
-## Epic 1 — 项目基础设施
+## Epic 1 — 基础设施
+
+> 项目能启动、数据库能跑、SQL 能安全执行。
 
 ### PR #1: Backend 初始化 ✅
 
@@ -106,8 +107,6 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 
 ---
 
-## Epic 2 — 数据访问层
-
 ### PR #5: Database 核心 ✅
 
 | 字段 | 内容 |
@@ -172,8 +171,6 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 
 ---
 
-## Epic 3 — SQL Core
-
 ### PR #8: SQL Validator ✅
 
 | 字段 | 内容 |
@@ -194,6 +191,10 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 > ⚠️ 不负责执行 SQL，不负责生成 SQL
 
 ---
+
+## Epic 2 — Agent 主链路
+
+> 从用户问题到 SQL 执行的核心 Agent 能力。
 
 ### PR #9: Task Analyzer ✅
 
@@ -220,7 +221,7 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 |------|------|
 | **Branch** | `feature/sql-generation` |
 | **目标** | 根据 Schema Context + 用户问题，生成 SQL |
-| **文件清单** | `backend/app/agents/sql_agent.py`（部分），`backend/prompts/sql_agent/sql_generation.md` |
+| **文件清单** | `backend/app/agents/sql_generator.py`, `backend/prompts/sql_agent/sql_generation.md` |
 | **交付标准** | LLM 能根据 Schema 信息生成可执行的 SELECT 语句 |
 
 **详细任务**：
@@ -232,8 +233,6 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 > ⚠️ 不执行 SQL，不做反思循环，不涉及 Task Analyzer 集成
 
 ---
-
-## Epic 4 — Schema Retrieval（亮点模块）
 
 ### PR #11: Schema Index ✅
 
@@ -256,7 +255,7 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 
 ---
 
-### PR #12: Schema Retriever
+### PR #12: Schema Retriever ✅
 
 | 字段 | 内容 |
 |------|------|
@@ -277,7 +276,7 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 
 ---
 
-### PR #13: Reflection Loop
+### PR #13: Reflection Loop ✅
 
 | 字段 | 内容 |
 |------|------|
@@ -287,19 +286,42 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 | **交付标准** | 错误的 SQL → 分类 → 修正 → 重新校验 → 重新执行（最多 3 次） |
 
 **详细任务**：
-- [ ] `ErrorClassifier`：根据错误信息判断类型
-- [ ] `SchemaErrorHandler`：重新检索 Schema → 重新生成
-- [ ] `SyntaxErrorHandler`：LLM 直接修正 SQL
-- [ ] `AmbiguousHandler`：补充上下文 → 重新生成
-- [ ] 集成到 SQL Agent 的 Graph 中
+- [✔] `ErrorClassifier`：LLM 根据错误信息判断类型
+- [✔] `SchemaErrorHandler`：重新检索 Schema → 重新生成
+- [✔] `SyntaxErrorHandler`：LLM 直接修正 SQL
+- [✔] `AmbiguousHandler`：补充上下文 → 重新生成
+- [ ] 集成到 LangGraph Workflow 中（PR #14）
 
 > ⚠️ 不修改 Chat、Tool、Validator
 
 ---
 
-## Epic 5 — 结果处理
+### PR #14: LangGraph Workflow
 
-### PR #14: Chart Tool
+| 字段 | 内容 |
+|------|------|
+| **Branch** | `feature/langgraph-workflow` |
+| **目标** | 将已完成模块编排为完整 SQL Agent 工作流 |
+| **文件清单** | `backend/app/agents/state.py`, `backend/app/graph/graph.py`, `backend/app/graph/nodes.py` |
+| **交付标准** | `graph.invoke({"question": "销售额趋势"})` → 端到端输出包含 SQL 和结果 |
+
+**详细任务**：
+- [ ] `AgentState`：统一 State（question, task_plan, schema_context, generated_sql, validation, query_result, retry_count）
+- [ ] `StateGraph`：节点编排（TaskAnalyzer → Retriever → Generator → Validator → Executor → Reflection）
+- [ ] 条件路由：Validator 失败 → Reflection；Executor 失败 → Reflection
+- [ ] Retry 控制：最多 3 次，超出则终止
+- [ ] 节点生命周期：每个节点只读写 State 的特定字段
+- [ ] 单元测试（Mock 各节点）
+
+> ⚠️ 不包含 Chart、Insight、Evidence、PromptLoader
+
+---
+
+## Epic 3 — 结果处理
+
+> 查询结果的可视化、洞察与证据链分析。
+
+### PR #15: Chart Tool
 
 | 字段 | 内容 |
 |------|------|
@@ -319,7 +341,7 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 
 ---
 
-### PR #15: Insight Tool
+### PR #16: Insight Tool
 
 | 字段 | 内容 |
 |------|------|
@@ -338,7 +360,7 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 
 ---
 
-### PR #16: Evidence Analyzer
+### PR #17: Evidence Analyzer
 
 | 字段 | 内容 |
 |------|------|
@@ -356,9 +378,11 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 
 ---
 
-## Epic 6 — 工程化
+## Epic 4 — 工程化
 
-### PR #17: Evaluation + Logging
+> 评测、日志、Prompt 管理、可观测性、发布。
+
+### PR #18: Evaluation + Logging
 
 | 字段 | 内容 |
 |------|------|
@@ -377,7 +401,7 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 
 ---
 
-### PR #18: README + Docker Release
+### PR #19: README + Docker Release
 
 | 字段 | 内容 |
 |------|------|
@@ -391,6 +415,35 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 - [ ] Docker 生产配置
 - [ ] Demo GIF 录制
 - [ ] 最终代码清理
+
+---
+
+### PR #20: PromptLoader
+
+| 字段 | 内容 |
+|------|------|
+| **Branch** | `feature/prompt-loader` |
+| **目标** | 统一 Prompt 加载、缓存、变量替换 |
+| **文件清单** | `backend/app/core/prompt_loader.py` |
+| **交付标准** | `prompt_loader.load("sql_generation", task=plan, schema=ctx)` → 返回渲染后的文本 |
+
+**详细任务**：
+- [ ] `PromptLoader` 类：根据名称加载 Prompt 文件
+- [ ] 变量替换（模板语法如 `{{task_type}}`）
+- [ ] 文件缓存（避免每次调用读磁盘）
+- [ ] 替换所有现有 `open(...prompt...)` 调用
+- [ ] 单元测试
+
+> ⚠️ 纯粹工程化改进，不影响任何业务能力
+
+---
+
+## 架构原则
+
+1. **LangGraph Workflow 只负责节点编排，不承载业务逻辑。** 所有业务能力必须封装在独立的 Repository、Service、Tool 或 Agent 节点中。
+2. **Workflow 节点是薄的** — 每个节点只读写 State 的特定字段，不做 LLM 调用、不做数据库查询。
+3. **Repository 不做 Embedding。Tool 不查数据库。** 分层职责不可跨越。
+4. **TaskPlan 是中心契约** — 下游模块（Generator、Chart、Insight）只接收 TaskPlan + SchemaContext，不直接接触自然语言。
 
 ---
 
@@ -418,24 +471,33 @@ Week 5:  PR17 ~ PR18 工程化（评测、日志、部署、README）
 
 ```
 main
-  └── feature/backend-init        ← PR #1
-  └── feature/frontend-init       ← PR #2
-  └── feature/docker-compose      ← PR #3
-  └── feature/init-dataset        ← PR #4
-  └── feature/database            ← PR #5
-  └── feature/schema-repository   ← PR #6
-  └── feature/sql-executor        ← PR #7
-  └── feature/sql-validator       ← PR #8
-  └── feature/task-analyzer       ← PR #9
-  └── feature/sql-generation      ← PR #10
-  └── feature/schema-index        ← PR #11
-  └── feature/schema-retriever    ← PR #12
-  └── feature/reflection-loop     ← PR #13
-  └── feature/chart-tool          ← PR #14
-  └── feature/insight-tool        ← PR #15
-  └── feature/evidence-analyzer   ← PR #16
-  └── feature/eval-logging        ← PR #17
-  └── feature/release             ← PR #18
+  ├── Epic 1 — 基础设施
+  │   ├── feature/backend-init        ← PR #1
+  │   ├── feature/frontend-init       ← PR #2
+  │   ├── feature/docker-compose      ← PR #3
+  │   ├── feature/init-dataset        ← PR #4
+  │   ├── feature/database            ← PR #5
+  │   ├── feature/schema-repository   ← PR #6
+  │   ├── feature/sql-executor        ← PR #7
+  │   └── feature/sql-validator       ← PR #8
+  │
+  ├── Epic 2 — Agent 主链路
+  │   ├── feature/task-analyzer       ← PR #9
+  │   ├── feature/sql-generation      ← PR #10
+  │   ├── feature/schema-index        ← PR #11
+  │   ├── feature/schema-retriever    ← PR #12
+  │   ├── feature/reflection-loop     ← PR #13
+  │   └── feature/langgraph-workflow  ← PR #14
+  │
+  ├── Epic 3 — 结果处理
+  │   ├── feature/chart-tool          ← PR #15
+  │   ├── feature/insight-tool        ← PR #16
+  │   └── feature/evidence-analyzer   ← PR #17
+  │
+  └── Epic 4 — 工程化
+      ├── feature/eval-logging        ← PR #18
+      ├── feature/release             ← PR #19
+      └── feature/prompt-loader       ← PR #20
 ```
 
 每个 Feature Branch 从 `main` 拉出，合并回 `main`。不嵌套。

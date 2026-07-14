@@ -52,28 +52,43 @@
 
 ## 3. 架构设计
 
-### Agent 架构（核心变化：只有 1 个真正的 Agent）
+### Agent 架构（核心变化：只有 1 个真正的 Agent + LangGraph 编排）
 
 ```
 User
   │
   ▼
 ┌──────────────────────────────────────────────────────────┐
-│                    SQL Agent                             │
+│                 LangGraph Workflow                       │
 │                                                          │
-│  1. Task Analyzer（意图分析 + 参数提取）                   │
-│  2. Schema Retrieval（检索相关表结构）                     │
-│  3. SQL Generation（生成 SQL）                            │
-│  4. Safety Validation（AST 安全校验）                      │
-│  5. SQL Execution（执行 SQL）                             │
-│  6. Error Analysis & Retry（结构化错误修正, max 3次）      │
-│  7. Result Processing（按需调用 Tool）                    │
+│   Node 1: Task Analyzer（意图分析 + 参数提取）             │
+│   Node 2: Schema Retrieval（检索相关表结构）               │
+│   Node 3: SQL Generation（生成 SQL）                      │
+│   Node 4: Safety Validation（AST 安全校验）                │
+│   Node 5: SQL Execution（执行 SQL）                       │
+│   Node 6: Reflection（结构化错误修正, max 3次）            │
+│   Node 7: Result Processing（按需调用 Tool）              │
 │     ├── Chart Tool（数据 → Python → ECharts Option）      │
 │     ├── Insight Tool（结果 → LLM → 总结）                 │
 │     └── Evidence Analyzer（结论 → 引用数据 → 证据链）      │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
 ```
+
+### 架构原则
+
+**Workflow（LangGraph）只负责节点编排，不承载业务逻辑。** 所有业务能力必须封装在独立的 Repository、Service、Tool 或 Agent 节点中。
+
+Workflow 节点是薄的 — 每个节点只读写 State 的特定字段，不做 LLM 调用、不做数据库查询。
+
+```
+Repository 负责数据来源        → SchemaRepository.get_columns()
+Tool       负责执行动作          → SQLValidator.validate()
+Service    负责 LLM 调用         → TaskAnalyzer.analyze()
+Agent      负责有状态 Workflow   → LangGraph StateGraph
+```
+
+分层职责不可跨越：Repository 不做 Embedding，Tool 不查数据库。所有模块通过 `AgentState` 这个统一 Context 通信。
 
 **为什么只有一个 Agent？**
 
@@ -88,43 +103,47 @@ User
 User: "分析一下最近30天各品类销售额趋势"
   │
   ▼
-┌─ SQL Agent ──────────────────────────────────────────────────┐
-│                                                               │
-│  Step 1: Task Analyzer                                        │
-│  → task_type: trend_analysis                                  │
-│  → params: {time_range, metrics: [sales], dims: [category]}   │
-│  → requires: {chart: line, insight: true, evidence: false}    │
-│                                                               │
-│  Step 2: Schema Retrieval                                     │
-│  → 问题向量化 → FAISS 召回 Top-3 相关表                       │
-│  → 扩展 FK 关联表 → 构建 Schema Context                       │
-│  → 输出: 关联表 + 字段 + 示例数据                               │
-│                                                               │
-│  Step 3: SQL Generation                                       │
-│  → Schema Context + 用户问题 + Few-shot → LLM → SQL           │
-│                                                               │
-│  Step 4: Safety Validation                                    │
-│  → sqlglot AST 解析 → 检查只读 → 检查危险模式 → 结果           │
-│                                                               │
-│  Step 5: SQL Execution                                        │
-│  → 只读用户执行 → 超时 10s → 限 500 行 → 返回 DataFrame       │
-│  │                                                             │
-│  ├── 成功 → Step 7                                            │
-│  └── 失败 → Step 6                                            │
-│                                                               │
-│  Step 6: Error Analysis & Retry (max 3次)                     │
-│  → Error Classifier → 类型判断:                               │
-│     ├── Schema Error → Schema 不一致 → 重新 Retrieval         │
-│     ├── Syntax Error → 直接修正 SQL                           │
-│     ├── Ambiguous → 补充上下文 → 重新生成                     │
-│     └── Other → LLM 分析 → 重试                               │
-│  → 回到 Step 4                                                │
-│                                                               │
-│  Step 7: Result Processing                                    │
+┌─ LangGraph Workflow ────────────────────────────────────────┐
+│                                                              │
+│  START                                                       │
+│    │                                                         │
+│    ▼                                                         │
+│  Node 1: Task Analyzer                                       │
+│  → task_type: trend_analysis                                 │
+│  → params: {time_range, metrics: [sales], dims: [category]}  │
+│  → requires: {chart: line, insight: true, evidence: false}   │
+│    │                                                         │
+│    ▼                                                         │
+│  Node 2: Schema Retrieval                                    │
+│  → 问题向量化 → FAISS 召回 Top-3 相关表                      │
+│  → 扩展 FK 关联表 → 构建 Schema Context                      │
+│  → 输出: 关联表 + 字段 + 示例数据                              │
+│    │                                                         │
+│    ▼                                                         │
+│  Node 3: SQL Generation                                      │
+│  → Schema Context + 用户问题 + Few-shot → LLM → SQL          │
+│    │                                                         │
+│    ▼                                                         │
+│  Node 4: Safety Validation                                   │
+│  → sqlglot AST 解析 → 检查只读 → 检查危险模式 → 结果          │
+│    │                                                         │
+│    ├── 失败 ──► Node 6: Reflection                           │
+│    │              │                                           │
+│    ▼             ├── Schema Error → Node 2(重新检索)         │
+│  Node 5: SQL Execution    ├── Syntax Error → LLM 修正        │
+│  → 只读用户执行 → 超时10s  └── Ambiguous → 补充上下文 → 重试  │
+│  → 限 500 行 → DataFrame         │                            │
+│    │                             └── max 3次 → Node 3/4/5    │
+│    ├── 成功 → Node 7                                         │
+│    └── 失败 → Node 6 (同上)                                   │
+│         │                                                     │
+│         ▼                                                     │
+│  Node 7: Result Processing                                    │
 │  → Chart Tool: 数据分析 → line chart                          │
 │  → Insight Tool: LLM 总结 → 业务洞察                          │
-│                                                               │
-└───────────────────────────────────────────────────────────────┘
+│    │                                                          │
+│  END                                                          │
+└──────────────────────────────────────────────────────────────┘
   │
   ▼
 User 收到: 趋势图 + 数据表 + 洞察结论
@@ -456,10 +475,10 @@ Trace ID: tx_7f3a1b2c
 ### Phase 2：Agent 能力完善（Week 3-4）
 
 - [ ] 结构化 Reflection Loop（Error Classifier + 分类型修复）
+- [ ] LangGraph Workflow 编排（StateGraph + 条件路由 + Retry）
 - [ ] Chart Tool 特征分析 + ECharts 生成
 - [ ] Insight Tool 数据洞察
 - [ ] Prompt 管理 + 版本化
-- [ ] 前端集成图表渲染
 
 ### Phase 3：Evidence + Eval（Week 5-6）
 
@@ -487,9 +506,14 @@ t2sAnalysis/
 │   │   ├── api/               # FastAPI 路由
 │   │   │   ├── chat.py        # 聊天 SSE 接口
 │   │   │   └── schema.py      # Schema 查询接口
-│   │   ├── agents/            # Agent 定义
-│   │   │   ├── sql_agent.py   # SQL Agent（唯一的真正 Agent）
-│   │   │   └── state.py       # LangGraph State 定义
+│   │   ├── agents/            # Agent 节点（按业务域分组）
+│   │   │   ├── state.py       # AgentState 统一 Context
+│   │   │   ├── sql/           # SQL 相关节点
+│   │   │   │   ├── generator.py
+│   │   │   │   ├── reflection.py
+│   │   │   │   └── workflow.py
+│   │   │   ├── chart/         # 图表节点
+│   │   │   └── insight/       # 洞察节点
 │   │   ├── graph/             # LangGraph 图编排
 │   │   │   └── graph.py       # StateGraph 构建
 │   │   ├── tools/             # 工具函数（非 Agent）
