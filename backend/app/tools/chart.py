@@ -15,7 +15,7 @@ Usage:
     # result.echarts_option → dict ready for JSON serialisation
 """
 
-from typing import Any, Optional
+from typing import Optional
 
 from app.models.query import QueryResult
 from app.models.task import TaskPlan
