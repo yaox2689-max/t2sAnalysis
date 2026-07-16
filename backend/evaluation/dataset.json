@@ -1,0 +1,112 @@
+[
+  {
+    "id": "001",
+    "question": "最近30天销售额最高的前10个品类",
+    "category": "aggregation",
+    "difficulty": "easy",
+    "expected_tables": ["orders", "payments", "products", "product_category"],
+    "expected_metrics": ["sales"],
+    "expected_dimensions": ["product_category"],
+    "requires_chart": true,
+    "chart_type_hint": "bar"
+  },
+  {
+    "id": "002",
+    "question": "对比上月各品类销售额变化",
+    "category": "comparison",
+    "difficulty": "medium",
+    "expected_tables": ["orders", "payments", "products", "product_category"],
+    "expected_metrics": ["sales"],
+    "expected_dimensions": ["product_category"],
+    "requires_chart": true,
+    "chart_type_hint": "bar"
+  },
+  {
+    "id": "003",
+    "question": "最近7天每日订单量趋势",
+    "category": "trend",
+    "difficulty": "easy",
+    "expected_tables": ["orders"],
+    "expected_metrics": ["order_count"],
+    "expected_dimensions": ["date"],
+    "requires_chart": true,
+    "chart_type_hint": "line"
+  },
+  {
+    "id": "004",
+    "question": "哪个品类的平均客单价最高",
+    "category": "aggregation",
+    "difficulty": "medium",
+    "expected_tables": ["products", "order_items", "payments"],
+    "expected_metrics": ["avg_order_value"],
+    "expected_dimensions": ["product_category"],
+    "requires_chart": false
+  },
+  {
+    "id": "005",
+    "question": "上个月销量排名前5的商品",
+    "category": "ranking",
+    "difficulty": "easy",
+    "expected_tables": ["orders", "order_items", "products"],
+    "expected_metrics": ["sales_count"],
+    "expected_dimensions": ["product_name"],
+    "requires_chart": true,
+    "chart_type_hint": "bar"
+  },
+  {
+    "id": "006",
+    "question": "各支付方式的订单占比",
+    "category": "proportion",
+    "difficulty": "easy",
+    "expected_tables": ["payments"],
+    "expected_metrics": ["payment_count", "payment_value"],
+    "expected_dimensions": ["payment_type"],
+    "requires_chart": true,
+    "chart_type_hint": "pie"
+  },
+  {
+    "id": "007",
+    "question": "3月份销售额下降的主要原因是什么",
+    "category": "comparison",
+    "difficulty": "hard",
+    "expected_tables": ["orders", "payments", "products", "order_items"],
+    "expected_metrics": ["sales", "order_count"],
+    "expected_dimensions": ["product_category"],
+    "requires_insight": true,
+    "requires_chart": true,
+    "chart_type_hint": "bar"
+  },
+  {
+    "id": "008",
+    "question": "最近90天退货率最高的品类",
+    "category": "aggregation",
+    "difficulty": "medium",
+    "expected_tables": ["orders", "reviews", "products", "product_category"],
+    "expected_metrics": ["return_rate"],
+    "expected_dimensions": ["product_category"],
+    "requires_chart": true,
+    "chart_type_hint": "bar"
+  },
+  {
+    "id": "009",
+    "question": "各城市订单分布",
+    "category": "proportion",
+    "difficulty": "easy",
+    "expected_tables": ["customers", "orders"],
+    "expected_metrics": ["order_count"],
+    "expected_dimensions": ["customer_city"],
+    "requires_chart": true,
+    "chart_type_hint": "bar"
+  },
+  {
+    "id": "010",
+    "question": "每个月的销售额走势",
+    "category": "trend",
+    "difficulty": "easy",
+    "expected_tables": ["orders", "payments"],
+    "expected_metrics": ["sales"],
+    "expected_dimensions": ["month"],
+    "requires_chart": true,
+    "chart_type_hint": "line"
+  }
+]
