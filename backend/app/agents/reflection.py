@@ -18,37 +18,12 @@ Usage:
 """
 
 import json
-import os
 from typing import Optional
 
 from openai import AsyncOpenAI
 
+from app.core.prompt_loader import prompt_loader
 from app.models.task import GeneratedSQL, SchemaContext, TaskPlan
-
-# ── Prompt paths ────────────────────────────────────────
-
-_CLASSIFIER_PROMPT_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "..",
-    "..",
-    "prompts",
-    "reflection",
-    "error_classifier.md",
-)
-_FIX_PROMPT_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "..",
-    "..",
-    "prompts",
-    "reflection",
-    "sql_fix.md",
-)
-
-
-def _load_prompt(path: str) -> str:
-    """Read a prompt file from disk."""
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
 
 
 # ── Models ──────────────────────────────────────────────
@@ -115,7 +90,7 @@ class ErrorClassifier:
     def __init__(self, llm_client: AsyncOpenAI, model: str) -> None:
         self._client = llm_client
         self._model = model
-        self._prompt = _load_prompt(_CLASSIFIER_PROMPT_PATH)
+        self._prompt = prompt_loader.load("reflection/error_classifier")
 
     async def classify(self, error_msg: str) -> ErrorClassification:
         """Classify an error message into a known type."""
@@ -164,7 +139,7 @@ class ReflectionLoop:
         self._sql_generator = sql_generator
         self._schema_retriever = schema_retriever
         self._classifier = ErrorClassifier(self._client, model)
-        self._fix_prompt = _load_prompt(_FIX_PROMPT_PATH)
+        self._fix_prompt = prompt_loader.load("reflection/sql_fix")
 
     async def run(
         self,

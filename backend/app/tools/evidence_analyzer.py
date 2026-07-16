@@ -25,28 +25,18 @@ Usage:
 """
 
 import json
-import os
 from typing import Optional
 
 from openai import AsyncOpenAI
 
+from app.core.prompt_loader import prompt_loader
 from app.models.query import QueryResult
-
-PROMPT_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "..",
-    "..",
-    "prompts",
-    "tools",
-    "evidence_analyzer.md",
-)
 
 _PREVIEW_MAX_ROWS = 20
 
 
 def _load_prompt() -> str:
-    with open(PROMPT_PATH, "r", encoding="utf-8") as f:
-        return f.read()
+    return prompt_loader.load("tools/evidence_analyzer")
 
 
 # ── Models ──────────────────────────────────────────────

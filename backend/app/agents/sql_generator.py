@@ -14,27 +14,13 @@ Usage:
 """
 
 import json
-import os
 from typing import Optional
 
 import sqlglot
 from openai import AsyncOpenAI
 
+from app.core.prompt_loader import prompt_loader
 from app.models.task import GeneratedSQL, SchemaContext, TaskPlan
-
-PROMPT_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "..",
-    "..",
-    "prompts",
-    "sql_agent",
-    "sql_generation.md",
-)
-
-
-def _load_prompt() -> str:
-    with open(PROMPT_PATH, "r", encoding="utf-8") as f:
-        return f.read()
 
 
 def _build_schema_text(schema: SchemaContext) -> str:
@@ -89,7 +75,7 @@ class SQLGenerator:
     ) -> None:
         self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model = model
-        self._system_prompt = _load_prompt()
+        self._system_prompt = prompt_loader.load("sql_agent/sql_generation")
 
     async def generate(
         self,

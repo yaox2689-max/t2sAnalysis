@@ -5,26 +5,12 @@ It does NOT involve Database, Agent, or multi-step reasoning.
 """
 
 import json
-import os
 from typing import Optional
 
 import openai
 
+from app.core.prompt_loader import prompt_loader
 from app.models.task import TaskPlan
-
-PROMPT_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "..",
-    "..",
-    "prompts",
-    "sql_agent",
-    "task_analyzer.md",
-)
-
-
-def _load_prompt() -> str:
-    with open(PROMPT_PATH, "r", encoding="utf-8") as f:
-        return f.read()
 
 
 class TaskAnalyzer:
@@ -36,7 +22,7 @@ class TaskAnalyzer:
             base_url=base_url,
         )
         self.model = model
-        self._system_prompt = _load_prompt()
+        self._system_prompt = prompt_loader.load("sql_agent/task_analyzer")
 
     async def analyze(
         self,
