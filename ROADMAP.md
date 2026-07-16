@@ -290,7 +290,7 @@ Week 4:  PR18 ~ PR20 工程化（评测、日志、Prompt 管理、Release）
 - [✔] `SchemaErrorHandler`：重新检索 Schema → 重新生成
 - [✔] `SyntaxErrorHandler`：LLM 直接修正 SQL
 - [✔] `AmbiguousHandler`：补充上下文 → 重新生成
-- [ ] 集成到 LangGraph Workflow 中（PR #14）
+- [ ] 集成到 LangGraph Workflow 中（PR #14 完成）
 
 > ⚠️ 不修改 Chat、Tool、Validator
 
@@ -332,12 +332,12 @@ Week 4:  PR18 ~ PR20 工程化（评测、日志、Prompt 管理、Release）
 - Graph 代码不超过 100 行。
 
 **详细任务**：
-- [ ] `AgentState` 定义（含 `current_sql`、`retry_count`、`max_retries`）
-- [ ] 薄节点函数（依赖注入，不 new 对象）
-- [ ] `StateGraph` 构建 + 条件路由
-- [ ] Reflection 返回 `next_action`，Graph 据此路由
-- [ ] Router 函数（condition）
-- [ ] 单元测试（Mock 各节点）
+- [✔] `AgentState` 定义（含 `current_sql`、`retry_count`、`max_retries`）
+- [✔] 薄节点函数（依赖注入，不 new 对象）
+- [✔] `StateGraph` 构建 + 条件路由
+- [✔] Reflection 返回 `next_action`，Graph 据此路由
+- [✔] Router 函数（condition）
+- [✔] 单元测试（Mock 各节点）
 
 > ⚠️ 不包含 Chart、Insight、Evidence、PromptLoader
 
@@ -357,11 +357,11 @@ Week 4:  PR18 ~ PR20 工程化（评测、日志、Prompt 管理、Release）
 | **交付标准** | 输入 DataFrame → 输出 `{chart_type, echarts_option}` |
 
 **详细任务**：
-- [ ] 特征分析：时间序列、分类对比、占比、相关性、分布
-- [ ] 规则引擎决定图表类型
-- [ ] 生成 ECharts Option（Python dict）
-- [ ] 支持 Line、Bar、Pie、Scatter、Histogram
-- [ ] 单元测试
+- [✔] 特征分析：时间序列、分类对比、占比、相关性、分布
+- [✔] 规则引擎决定图表类型
+- [✔] 生成 ECharts Option（Python dict）
+- [✔] 支持 Line、Bar、Pie、Scatter、Histogram
+- [✔] 单元测试
 
 > ⚠️ 不需要 LLM，纯 Python 逻辑
 
@@ -377,10 +377,10 @@ Week 4:  PR18 ~ PR20 工程化（评测、日志、Prompt 管理、Release）
 | **交付标准** | 输入 DataFrame + 用户问题 → 输出 1-3 句业务洞察 |
 
 **详细任务**：
-- [ ] 编写 Prompt
-- [ ] 格式化 DataFrame 为文字摘要
-- [ ] LLM 调用的 Summarize 逻辑
-- [ ] 单元测试
+- [✔] 编写 Prompt
+- [✔] 格式化 DataFrame 为文字摘要
+- [✔] LLM 调用的 Summarize 逻辑
+- [✔] 单元测试
 
 > ⚠️ 这是一个 LLM 调用，不是 Agent。没有循环、没有工具调用
 
@@ -396,11 +396,11 @@ Week 4:  PR18 ~ PR20 工程化（评测、日志、Prompt 管理、Release）
 | **交付标准** | 输入"为什么销量下降"→ 输出结构化结论 + 证据链 |
 
 **详细任务**：
-- [ ] 编写 Prompt
-- [ ] 对比分析逻辑（当前 vs 对比期）
-- [ ] 多维交叉验证
-- [ ] 结构化输出：`EvidenceReport(conclusion, evidence_chain, suggestions)`
-- [ ] 单元测试
+- [✔] 编写 Prompt
+- [✔] 对比分析逻辑（当前 vs 对比期）
+- [✔] 多维交叉验证
+- [✔] 结构化输出：`EvidenceReport(conclusion, evidence_chain, suggestions)`
+- [✔] 单元测试
 
 ---
 
@@ -418,12 +418,12 @@ Week 4:  PR18 ~ PR20 工程化（评测、日志、Prompt 管理、Release）
 | **交付标准** | `pytest evaluation/benchmark.py` 可运行，日志包含 Trace ID |
 
 **详细任务**：
-- [ ] `evaluation/golden_sql.json`：20-30 条标准测试集
-- [ ] `evaluation/benchmark.py`：Execution Accuracy、Latency、Retry Count
-- [ ] `evaluation/metrics.py`：SQL Match 语义等价判断
-- [ ] `core/logging.py`：JSON 结构化日志
-- [ ] Trace ID 中间件（每个请求生成唯一 Trace ID）
-- [ ] LLM Call ID 追踪
+- [✔] `evaluation/golden_sql.json`：20-30 条标准测试集
+- [✔] `evaluation/benchmark.py`：Execution Accuracy、Latency、Retry Count
+- [✔] `evaluation/metrics.py`：SQL Match 语义等价判断
+- [✔] `core/logging.py`：JSON 结构化日志
+- [✔] Trace ID 中间件（每个请求生成唯一 Trace ID）
+- [✔] LLM Call ID 追踪
 
 ---
 
@@ -437,10 +437,10 @@ Week 4:  PR18 ~ PR20 工程化（评测、日志、Prompt 管理、Release）
 | **交付标准** | 新用户按 README 操作，5 分钟内可运行完整项目 |
 
 **详细任务**：
-- [ ] README：项目介绍 + 架构图 + 流程图 + 快速开始
-- [ ] Docker 生产配置
+- [✔] README：项目介绍 + 架构图 + 流程图 + 快速开始
+- [✔] Docker 生产配置
 - [ ] Demo GIF 录制
-- [ ] 最终代码清理
+- [✔] 最终代码清理
 
 ---
 
@@ -454,11 +454,11 @@ Week 4:  PR18 ~ PR20 工程化（评测、日志、Prompt 管理、Release）
 | **交付标准** | `prompt_loader.load("sql_generation", task=plan, schema=ctx)` → 返回渲染后的文本 |
 
 **详细任务**：
-- [ ] `PromptLoader` 类：根据名称加载 Prompt 文件
-- [ ] 变量替换（模板语法如 `{{task_type}}`）
-- [ ] 文件缓存（避免每次调用读磁盘）
-- [ ] 替换所有现有 `open(...prompt...)` 调用
-- [ ] 单元测试
+- [✔] `PromptLoader` 类：根据名称加载 Prompt 文件
+- [✔] 变量替换（模板语法如 `{{task_type}}`）
+- [✔] 文件缓存（避免每次调用读磁盘）
+- [✔] 替换所有现有 `open(...prompt...)` 调用
+- [✔] 单元测试
 
 > ⚠️ 纯粹工程化改进，不影响任何业务能力
 
