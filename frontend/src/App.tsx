@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import { Layout, Menu } from "antd";
 import {
   MessageOutlined,
@@ -13,15 +13,43 @@ const { Sider, Content } = Layout;
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState("chat");
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(
+    () => localStorage.getItem("session_id")
+  );
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const handleSessionChange = useCallback((id: string) => {
+    setCurrentSessionId(id);
+    localStorage.setItem("session_id", id);
+    setCurrentPage("chat");
+    setRefreshKey((k) => k + 1);
+  }, []);
+
+  const handleNewSession = useCallback(() => {
+    localStorage.removeItem("session_id");
+    setCurrentSessionId(null);
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   const renderPage = () => {
     switch (currentPage) {
       case "history":
-        return <History />;
+        return (
+          <History
+            onSelectSession={handleSessionChange}
+            refreshKey={refreshKey}
+          />
+        );
       case "settings":
         return <SettingsPage />;
       default:
-        return <Chat />;
+        return (
+          <Chat
+            sessionId={currentSessionId}
+            onNewSession={handleNewSession}
+            onSessionChange={handleSessionChange}
+          />
+        );
     }
   };
 
