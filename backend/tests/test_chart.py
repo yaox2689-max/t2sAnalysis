@@ -52,10 +52,12 @@ class TestDetect:
         assert detect_chart_type(cols, rows) == "histogram"
 
     def test_hint_overrides_detection(self):
+        """chart_type_hint is NOT used for category+num case (pie/bar chosen by rule)."""
         cols = [{"column_name": "category"}, {"column_name": "sales"}]
         rows = [{"category": "A", "sales": 10}, {"category": "B", "sales": 20}]
         plan = TaskPlan(task_type="query", chart_type_hint="line")
-        assert detect_chart_type(cols, rows, plan) == "line"
+        # 2 rows, cat+num → pie, not line
+        assert detect_chart_type(cols, rows, plan) == "pie"
 
 
 # ── ChartTool.render ─────────────────────────────────────
@@ -81,11 +83,9 @@ class TestRender:
     def test_bar_chart(self, tool):
         result = QueryResult(
             columns=["category", "sales"],
-            rows=[{"category": "A", "sales": 10}, {"category": "B", "sales": 20},
-                  {"category": "C", "sales": 15}],
+            rows=[{"category": f"A{i}", "sales": i*10} for i in range(1, 10)],
         )
-        plan = TaskPlan(task_type="compare", chart_type_hint="bar")
-        out = tool.render(result, plan)
+        out = tool.render(result)
         assert out.supported is True
         assert out.chart_type == "bar"
 
@@ -134,8 +134,14 @@ class TestRender:
         assert out.y_field == "sales"
 
     def test_hint_respected(self, tool):
+        """When no rule matches, fallback to chart_type_hint."""
         result = QueryResult(columns=["a", "b"],
-                             rows=[{"a": "x", "b": 1}, {"a": "y", "b": 2}])
+                             rows=[{"a": "x", "b": 1}, {"a": "y", "b": 2},
+                                   {"a": "z", "b": 3}, {"a": "w", "b": 4},
+                                   {"a": "v", "b": 5}, {"a": "u", "b": 6},
+                                   {"a": "t", "b": 7}, {"a": "s", "b": 8},
+                                   {"a": "r", "b": 9}, {"a": "q", "b": 10}])
         plan = TaskPlan(task_type="query", chart_type_hint="bar")
         out = tool.render(result, plan)
+        # 10 cats + 1 num → bar, hint matches
         assert out.chart_type == "bar"

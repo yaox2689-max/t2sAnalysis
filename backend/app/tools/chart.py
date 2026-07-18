@@ -135,42 +135,40 @@ def detect_chart_type(
     """Determine the best chart type for the given data.
 
     Priority:
-    1. ``task_plan.chart_type_hint`` if set and compatible.
-    2. Rule-based inference from column types and row count.
+    1. Rule-based inference from column types and row count.
+    2. ``task_plan.chart_type_hint`` as a fallback if the rule result
+       and hint match, but we don't override a good rule-based choice.
     """
-    # 1. Respect hint from TaskPlan
-    hint = task_plan and task_plan.chart_type_hint
-    if hint and hint in ("line", "bar", "pie", "scatter", "histogram"):
-        return hint
-
-    # 2. Empty or single-row data → no chart
+    # 1. Empty or single-row data → no chart
     if not rows or len(rows) < 2:
         return "none"
 
     classes = _classify_columns(columns)
 
-    # 3. Time + numeric → Line
+    # 2. Time + numeric → Line
     if classes["time"] and classes["numeric"]:
         return "line"
 
-    # 4. Two numeric columns → Scatter
+    # 3. Two numeric columns → Scatter
     if len(classes["numeric"]) >= 2:
         return "scatter"
 
-    # 5. Single numeric column → Histogram
+    # 4. Single numeric column → Histogram
     if classes["numeric"] and not classes["category"]:
         return "histogram"
 
-    # 6. Category + numeric → Bar (default for comparisons)
+    # 5. Category + numeric
     if classes["category"] and classes["numeric"]:
         num_count = len(classes["numeric"])
         cat_count = len(classes["category"])
-        # Few categories, one numeric → check distinct values for Pie
-        if cat_count == 1 and num_count == 1 and len(rows) <= 12:
+        if cat_count == 1 and num_count == 1 and len(rows) <= 8:
             return "pie"
         return "bar"
 
-    # 7. Fallback
+    # 6. Fallback: use hint if available
+    hint = task_plan and task_plan.chart_type_hint
+    if hint and hint in ("line", "bar", "pie", "scatter", "histogram"):
+        return hint
     return "bar"
 
 
