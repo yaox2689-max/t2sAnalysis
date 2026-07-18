@@ -31,9 +31,9 @@ class Settings(BaseSettings):
 
     # ── Database (MySQL) ─────────────────────────────────
     DB_HOST: str = "localhost"
-    DB_PORT: int = 3307
+    DB_PORT: int = 3306
     DB_USER: str = "root"
-    DB_PASSWORD: str = "wangjita33"
+    DB_PASSWORD: str = ""
     DB_NAME: str = "t2s_analysis"
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 10
