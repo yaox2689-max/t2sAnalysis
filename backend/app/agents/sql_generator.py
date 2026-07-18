@@ -50,7 +50,7 @@ def _build_schema_text(schema: SchemaContext) -> str:
 def _check_schema_valid(sql: str, schema: SchemaContext) -> bool:
     """Verify generated SQL only references tables from SchemaContext."""
     try:
-        tree = sqlglot.parse_one(sql)
+        tree = sqlglot.parse_one(sql, dialect="mysql")
     except sqlglot.errors.ParseError:
         return True  # let downstream parse error handle it
 
@@ -91,6 +91,7 @@ class SQLGenerator:
             f"Metrics: {', '.join(task_plan.metrics)}\n"
             f"Dimensions: {', '.join(task_plan.dimensions)}\n"
             f"Time Range: {task_plan.time_range}\n\n"
+            f"Today's date is {__import__('datetime').datetime.now().strftime('%Y-%m-%d')}.\n\n"
             f"## Schema Context\n\n{schema_text}"
         )
 
@@ -104,7 +105,13 @@ class SQLGenerator:
         )
 
         raw = response.choices[0].message.content or ""
-        return self._parse(raw, schema_context)
+        parsed = self._parse(raw, schema_context)
+        # Even if the JSON parse marked it invalid, keep the SQL if we got one
+        if not parsed.valid and parsed.sql:
+            return GeneratedSQL(
+                sql=parsed.sql, explanation=parsed.explanation, valid=True
+            )
+        return parsed
 
     def _parse(self, raw: str, schema: SchemaContext) -> GeneratedSQL:
         """Parse LLM response into GeneratedSQL.
@@ -115,11 +122,24 @@ class SQLGenerator:
         try:
             data = json.loads(raw)
         except (json.JSONDecodeError, TypeError, ValueError):
-            return GeneratedSQL(
-                sql="",
-                explanation="Failed to parse LLM response as JSON",
-                valid=False,
-            )
+            # Try extracting JSON from markdown code fence
+            import re
+            m = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', raw)
+            if m:
+                try:
+                    data = json.loads(m.group(1))
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    return GeneratedSQL(
+                        sql="",
+                        explanation="Failed to parse LLM response as JSON",
+                        valid=False,
+                    )
+            else:
+                return GeneratedSQL(
+                    sql="",
+                    explanation="Failed to parse LLM response as JSON",
+                    valid=False,
+                )
 
         sql = data.get("sql", "")
 

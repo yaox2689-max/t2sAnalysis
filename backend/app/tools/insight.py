@@ -151,10 +151,15 @@ class InsightTool:
     @staticmethod
     def _parse(raw: str) -> InsightResult:
         """Parse LLM response into an InsightResult."""
+        # Try extracting JSON from markdown code fence
+        import re
+        m = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', raw)
+        if m:
+            raw = m.group(1)
         try:
             data = json.loads(raw)
         except (json.JSONDecodeError, TypeError, ValueError):
-            return InsightResult(summary=raw, confidence=0.0)
+            return InsightResult(summary=raw.strip(), confidence=0.0)
 
         return InsightResult(
             summary=data.get("summary", ""),

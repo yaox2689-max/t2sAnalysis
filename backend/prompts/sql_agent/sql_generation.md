@@ -23,6 +23,9 @@ You will receive:
    reserved words.
 6. Use `DATE_FORMAT` for date grouping, `COALESCE` for null defaults,
    `ROUND` for decimal precision where appropriate.
+7. **When generating date range filters like "last 30 days", use the current
+   date provided in the user prompt.** Do NOT hardcode past years — compute
+   the date range from today's date.
 
 ## Output Format
 

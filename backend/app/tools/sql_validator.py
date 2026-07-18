@@ -73,7 +73,7 @@ class SQLValidator:
     def validate(self, sql: str) -> ValidationResult:
         """Analyse a SQL statement and return a validation result."""
         try:
-            tree = parse_one(sql)
+            tree = parse_one(sql, dialect="mysql")
         except sqlglot.errors.ParseError as e:
             return ValidationResult(
                 passed=False,
