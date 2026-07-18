@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Layout, Menu } from "antd";
 import {
   MessageOutlined,
@@ -6,10 +6,25 @@ import {
   SettingOutlined,
 } from "@ant-design/icons";
 import Chat from "./pages/Chat";
+import History from "./pages/History";
+import SettingsPage from "./pages/Settings";
 
 const { Sider, Content } = Layout;
 
 const App: React.FC = () => {
+  const [currentPage, setCurrentPage] = useState("chat");
+
+  const renderPage = () => {
+    switch (currentPage) {
+      case "history":
+        return <History />;
+      case "settings":
+        return <SettingsPage />;
+      default:
+        return <Chat />;
+    }
+  };
+
   return (
     <Layout style={{ minHeight: "100vh" }}>
       <Sider theme="light" width={220} style={{ borderRight: "1px solid #f0f0f0" }}>
@@ -28,7 +43,8 @@ const App: React.FC = () => {
         </div>
         <Menu
           mode="inline"
-          defaultSelectedKeys={["chat"]}
+          selectedKeys={[currentPage]}
+          onClick={({ key }) => setCurrentPage(key)}
           items={[
             { key: "chat", icon: <MessageOutlined />, label: "对话" },
             { key: "history", icon: <BarChartOutlined />, label: "历史记录" },
@@ -39,7 +55,7 @@ const App: React.FC = () => {
       </Sider>
       <Layout>
         <Content style={{ display: "flex", flexDirection: "column" }}>
-          <Chat />
+          {renderPage()}
         </Content>
       </Layout>
     </Layout>

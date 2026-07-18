@@ -106,8 +106,11 @@ class SQLGenerator:
 
         raw = response.choices[0].message.content or ""
         parsed = self._parse(raw, schema_context)
-        # Even if the JSON parse marked it invalid, keep the SQL if we got one
-        if not parsed.valid and parsed.sql:
+        # If the SQL is valid (passes schema check), return as-is.
+        # If it failed due to parse issues but has SQL, keep it for downstream.
+        if parsed.valid:
+            return parsed
+        if parsed.sql and "Failed to parse" in parsed.explanation:
             return GeneratedSQL(
                 sql=parsed.sql, explanation=parsed.explanation, valid=True
             )
