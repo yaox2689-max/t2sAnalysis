@@ -9,6 +9,15 @@ import { listSessions, createSession, SessionInfo } from "../services/api";
 
 const { Text, Title } = Typography;
 
+/** Format a UTC timestamp string to Beijing time (UTC+8), 24-hour format. */
+function toBeijingTime(ts: string): string {
+  const d = new Date(ts);
+  return d.toLocaleString("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    hour12: false,
+  });
+}
+
 interface HistoryProps {
   onSelectSession: (id: string) => void;
   refreshKey: number;
@@ -80,7 +89,7 @@ const History: React.FC<HistoryProps> = ({ onSelectSession, refreshKey }) => {
                 description={
                   <Space size="small">
                     <Text type="secondary" style={{ fontSize: 12 }}>
-                      {new Date(item.updated_at).toLocaleString("zh-CN")}
+                      {toBeijingTime(item.updated_at)}
                     </Text>
                   </Space>
                 }

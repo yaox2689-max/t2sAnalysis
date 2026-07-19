@@ -7,6 +7,8 @@ page refreshes and can be browsed from the History page.
 import json
 import time
 import uuid
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
@@ -15,6 +17,17 @@ from pydantic import BaseModel
 from app.core.config import settings
 from app.core.database import Database
 from app.core.deps import app_ctx
+
+
+class _SafeEncoder(json.JSONEncoder):
+    """Handle types that the default encoder cannot serialise (Decimal, date, …)."""
+
+    def default(self, o: object) -> object:
+        if isinstance(o, Decimal):
+            return float(o)
+        if isinstance(o, (datetime, date)):
+            return o.isoformat()
+        return super().default(o)
 
 
 def _get_db() -> Database:
@@ -202,10 +215,10 @@ async def chat(request: ChatRequest) -> ChatResponse:
         "content": insight_text or "查询完成",
         "sql": sql,
         "chart_type": chart_type,
-        "echarts": json.dumps(chart_option, ensure_ascii=False) if chart_option else None,
+        "echarts": json.dumps(chart_option, ensure_ascii=False, cls=_SafeEncoder) if chart_option else None,
         "insight": insight_text,
-        "columns": json.dumps(columns, ensure_ascii=False) if columns else None,
-        "rows": json.dumps(rows, ensure_ascii=False) if rows else None,
+        "columns": json.dumps(columns, ensure_ascii=False, cls=_SafeEncoder) if columns else None,
+        "rows": json.dumps(rows, ensure_ascii=False, cls=_SafeEncoder) if rows else None,
         "elapsed": round(elapsed_ms, 2),
     }
     await db.execute(
@@ -237,7 +250,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         session_id=request.session_id,
         sql=sql,
         columns=columns,
-        rows=rows,
+        rows=json.loads(json.dumps(rows, cls=_SafeEncoder)),
         chart_type=chart_type,
         echarts_option=chart_option or {},
         insight=insight_text,
