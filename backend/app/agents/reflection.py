@@ -133,8 +133,12 @@ class ReflectionLoop:
         base_url: Optional[str],
         sql_generator: object,
         schema_retriever: object,
+        http_client: Optional[object] = None,
     ) -> None:
-        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        kwargs = {"api_key": api_key, "base_url": base_url}
+        if http_client is not None:
+            kwargs["http_client"] = http_client
+        self._client = AsyncOpenAI(**kwargs)
         self._model = model
         self._sql_generator = sql_generator
         self._schema_retriever = schema_retriever

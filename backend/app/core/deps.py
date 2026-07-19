@@ -82,6 +82,13 @@ class AppContext:
         if not api_key:
             logger.warning({"event": "llm_api_key_missing"})
 
+        # Force httpx to bypass proxy on Windows
+        import os as _os
+        _os.environ['no_proxy'] = '*'
+        _os.environ['NO_PROXY'] = '*'
+        _os.environ['HTTP_PROXY'] = ''
+        _os.environ['HTTPS_PROXY'] = ''
+
         # 7. Task Analyzer
         from app.services.task_analyzer import TaskAnalyzer
         analyzer = TaskAnalyzer(api_key=api_key, model=model, base_url=base_url)

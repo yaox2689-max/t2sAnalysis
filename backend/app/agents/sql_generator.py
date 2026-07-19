@@ -72,8 +72,12 @@ class SQLGenerator:
         api_key: str,
         model: str,
         base_url: Optional[str] = None,
+        http_client: Optional[object] = None,
     ) -> None:
-        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        kwargs = {"api_key": api_key, "base_url": base_url}
+        if http_client is not None:
+            kwargs["http_client"] = http_client
+        self.client = AsyncOpenAI(**kwargs)
         self.model = model
         self._system_prompt = prompt_loader.load("sql_agent/sql_generation")
 

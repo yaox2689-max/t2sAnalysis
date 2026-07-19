@@ -7,6 +7,7 @@ It does NOT involve Database, Agent, or multi-step reasoning.
 import json
 from typing import Optional
 
+import httpx
 import openai
 
 from app.core.prompt_loader import prompt_loader
@@ -16,11 +17,17 @@ from app.models.task import TaskPlan
 class TaskAnalyzer:
     """Analyses a user question and produces a structured TaskPlan."""
 
-    def __init__(self, api_key: str, model: str, base_url: Optional[str] = None) -> None:
-        self.client = openai.AsyncOpenAI(
-            api_key=api_key,
-            base_url=base_url,
-        )
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        base_url: Optional[str] = None,
+        http_client: Optional[httpx.AsyncClient] = None,
+    ) -> None:
+        kwargs = {"api_key": api_key, "base_url": base_url}
+        if http_client is not None:
+            kwargs["http_client"] = http_client
+        self.client = openai.AsyncOpenAI(**kwargs)
         self.model = model
         self._system_prompt = prompt_loader.load("sql_agent/task_analyzer")
 

@@ -1,5 +1,21 @@
 """FastAPI application entry point."""
 
+# ── Must be first: force httpx to bypass Windows proxy ──
+import os
+os.environ.setdefault("no_proxy", "*")
+os.environ.setdefault("NO_PROXY", "*")
+os.environ["HTTP_PROXY"] = ""
+os.environ["HTTPS_PROXY"] = ""
+
+# Monkey-patch httpx transport to not use proxy
+import httpx._transports.default
+_orig_transport = httpx._transports.default.AsyncHTTPTransport
+class _PatchedTransport(_orig_transport):
+    def __init__(self, *args, **kwargs):
+        kwargs["proxy"] = None
+        super().__init__(*args, **kwargs)
+httpx._transports.default.AsyncHTTPTransport = _PatchedTransport
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI

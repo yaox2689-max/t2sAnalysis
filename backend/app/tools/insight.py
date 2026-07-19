@@ -111,8 +111,12 @@ class InsightTool:
         api_key: str,
         model: str,
         base_url: Optional[str] = None,
+        http_client: Optional[object] = None,
     ) -> None:
-        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        kwargs = {"api_key": api_key, "base_url": base_url}
+        if http_client is not None:
+            kwargs["http_client"] = http_client
+        self._client = AsyncOpenAI(**kwargs)
         self._model = model
         self._prompt = _load_prompt()
 
