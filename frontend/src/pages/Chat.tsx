@@ -1,12 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Input, Button, Spin, Collapse, Table, Tag, Typography } from "antd";
+import { Input, Button, Spin, Collapse, Table, Typography } from "antd";
 import {
   SendOutlined,
   LoadingOutlined,
   DatabaseOutlined,
   BarChartOutlined,
-  CommentOutlined,
-  PlusOutlined,
+  BulbOutlined,
+  RocketOutlined,
+  SearchOutlined,
+  LineChartOutlined,
 } from "@ant-design/icons";
 import * as echarts from "echarts";
 import {
@@ -19,6 +21,24 @@ import {
 
 const { TextArea } = Input;
 const { Text, Paragraph } = Typography;
+
+const SUGGESTIONS = [
+  {
+    icon: <BarChartOutlined />,
+    text: "各品类的销售总额排名",
+    desc: "品类分析",
+  },
+  {
+    icon: <LineChartOutlined />,
+    text: "最近6个月的月度销售趋势",
+    desc: "趋势分析",
+  },
+  {
+    icon: <SearchOutlined />,
+    text: "订单量最多的前10个州",
+    desc: "地区分析",
+  },
+];
 
 // ── ECharts component ──────────────────────────────────
 
@@ -38,21 +58,51 @@ const EChart: React.FC<{ option: Record<string, unknown> }> = ({ option }) => {
     };
   }, [option]);
 
-  return <div ref={chartRef} style={{ width: "100%", height: 360 }} />;
+  return (
+    <div
+      ref={chartRef}
+      style={{
+        width: "100%",
+        height: 380,
+        borderRadius: 10,
+        overflow: "hidden",
+      }}
+    />
+  );
 };
+
+// ── Typing Indicator ───────────────────────────────────
+
+const TypingIndicator: React.FC = () => (
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      padding: "20px 24px",
+      background: "#ffffff",
+      border: "1px solid #e5e8ef",
+      borderLeft: "3px solid #0d9488",
+      borderRadius: "2px 14px 14px 2px",
+      boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+    }}
+  >
+    <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+      <span className="typing-dot" />
+      <span className="typing-dot" />
+      <span className="typing-dot" />
+    </div>
+    <Text style={{ color: "#64748b", fontSize: 13.5 }}>
+      AI 正在分析您的问题
+    </Text>
+  </div>
+);
 
 // ── Message display ────────────────────────────────────
 
 const AssistantMessage: React.FC<{ msg: MessageInfo }> = ({ msg }) => {
   return (
-    <div
-      style={{
-        background: "#fafafa",
-        border: "1px solid #f0f0f0",
-        borderRadius: 8,
-        padding: 16,
-      }}
-    >
+    <div className="assistant-card animate-fade-up">
       {msg.sql_text && (
         <Collapse
           ghost
@@ -61,92 +111,277 @@ const AssistantMessage: React.FC<{ msg: MessageInfo }> = ({ msg }) => {
             {
               key: "sql",
               label: (
-                <span>
-                  <DatabaseOutlined style={{ marginRight: 6 }} />
-                  查看 SQL
-                </span>
-              ),
-              children: (
-                <pre
+                <span
                   style={{
-                    background: "#1e1e1e",
-                    color: "#d4d4d4",
-                    padding: 12,
-                    borderRadius: 6,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    color: "#0d9488",
                     fontSize: 13,
-                    overflowX: "auto",
-                    margin: 0,
+                    fontWeight: 600,
+                    letterSpacing: 0.3,
                   }}
                 >
-                  {msg.sql_text}
-                </pre>
+                  <DatabaseOutlined />
+                  SQL 查询
+                </span>
               ),
+              children: <pre className="sql-block">{msg.sql_text}</pre>,
             },
           ]}
-          style={{ marginBottom: 12 }}
+          style={{ marginBottom: 16 }}
         />
       )}
 
-      {msg.columns && msg.columns.length > 0 && msg.rows_data && msg.rows_data.length > 0 && (
-        <div style={{ marginBottom: 12 }}>
-          <Text strong style={{ display: "block", marginBottom: 8 }}>
-            <BarChartOutlined style={{ marginRight: 6 }} />
-            查询结果 ({msg.rows_data.length} 行)
-          </Text>
-          <Table
-            dataSource={msg.rows_data.map((r, i) => ({ ...r, _key: i }))}
-            columns={msg.columns.map((col) => ({
-              title: col,
-              dataIndex: col,
-              key: col,
-              ellipsis: true,
-            }))}
-            rowKey="_key"
-            size="small"
-            pagination={msg.rows_data.length > 20 ? { pageSize: 20 } : false}
-            scroll={{ x: "max-content" }}
-            style={{ fontSize: 13 }}
-          />
-        </div>
-      )}
+      {msg.columns &&
+        msg.columns.length > 0 &&
+        msg.rows_data &&
+        msg.rows_data.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 10,
+              }}
+            >
+              <BarChartOutlined style={{ color: "#f59e0b" }} />
+              <Text
+                strong
+                style={{
+                  fontSize: 13,
+                  color: "#64748b",
+                  letterSpacing: 0.3,
+                }}
+              >
+                查询结果
+              </Text>
+              <span
+                style={{
+                  background: "rgba(245, 158, 11, 0.1)",
+                  color: "#d97706",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  padding: "2px 8px",
+                  borderRadius: 10,
+                }}
+              >
+                {msg.rows_data.length} 行
+              </span>
+            </div>
+            <Table
+              dataSource={msg.rows_data.map((r, i) => ({ ...r, _key: i }))}
+              columns={msg.columns.map((col) => ({
+                title: col,
+                dataIndex: col,
+                key: col,
+                ellipsis: true,
+              }))}
+              rowKey="_key"
+              size="small"
+              pagination={
+                msg.rows_data.length > 20
+                  ? { pageSize: 20, size: "small" }
+                  : false
+              }
+              scroll={{ x: "max-content" }}
+              style={{ borderRadius: 10, overflow: "hidden" }}
+            />
+          </div>
+        )}
 
-      {msg.chart_type && msg.echarts_option && Object.keys(msg.echarts_option).length > 0 && (
-        <div style={{ marginBottom: 12 }}>
-          <Text strong style={{ display: "block", marginBottom: 8 }}>
-            <BarChartOutlined style={{ marginRight: 6 }} />
-            图表 ({msg.chart_type})
-          </Text>
-          <EChart option={msg.echarts_option} />
-        </div>
-      )}
+      {msg.chart_type &&
+        msg.echarts_option &&
+        Object.keys(msg.echarts_option).length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 10,
+              }}
+            >
+              <LineChartOutlined style={{ color: "#0d9488" }} />
+              <Text
+                strong
+                style={{
+                  fontSize: 13,
+                  color: "#64748b",
+                  letterSpacing: 0.3,
+                }}
+              >
+                数据可视化
+              </Text>
+              <span
+                style={{
+                  background: "rgba(13, 148, 136, 0.1)",
+                  color: "#0d9488",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  padding: "2px 8px",
+                  borderRadius: 10,
+                }}
+              >
+                {msg.chart_type}
+              </span>
+            </div>
+            <EChart option={msg.echarts_option} />
+          </div>
+        )}
 
       {msg.insight && (
         <div
           style={{
-            background: "#f6ffed",
-            border: "1px solid #b7eb8f",
-            borderRadius: 6,
-            padding: "12px 16px",
+            background: "linear-gradient(135deg, rgba(13,148,136,0.05), rgba(2,132,199,0.03))",
+            borderLeft: "3px solid #0d9488",
+            borderRadius: "2px 10px 10px 2px",
+            padding: "14px 20px",
+            marginBottom: 12,
           }}
         >
-          <Text strong>
-            <CommentOutlined style={{ marginRight: 6 }} />
-            业务洞察
-          </Text>
-          <Paragraph style={{ margin: "8px 0 0", fontSize: 14 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 8,
+            }}
+          >
+            <BulbOutlined style={{ color: "#0d9488", fontSize: 14 }} />
+            <Text
+              strong
+              style={{
+                fontSize: 13,
+                color: "#0d9488",
+                letterSpacing: 0.3,
+              }}
+            >
+              业务洞察
+            </Text>
+          </div>
+          <Paragraph
+            style={{
+              margin: 0,
+              fontSize: 14,
+              lineHeight: 1.7,
+              color: "#1a1a2e",
+            }}
+          >
             {msg.insight}
           </Paragraph>
         </div>
       )}
 
-      <div style={{ textAlign: "right", marginTop: 8 }}>
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          耗时: {msg.elapsed_ms}ms
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          paddingTop: 8,
+          borderTop: "1px solid #f0f2f5",
+        }}
+      >
+        <Text style={{ fontSize: 11.5, color: "#94a3b8", letterSpacing: 0.3 }}>
+          耗时 {(msg.elapsed_ms! / 1000).toFixed(1)}s
         </Text>
       </div>
     </div>
   );
 };
+
+// ── Welcome Screen ─────────────────────────────────────
+
+const WelcomeScreen: React.FC<{ onSend: (text: string) => void }> = ({
+  onSend,
+}) => (
+  <div
+    className="welcome-bg"
+    style={{
+      flex: 1,
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "48px 32px",
+      position: "relative",
+    }}
+  >
+    <div style={{ position: "relative", zIndex: 1, textAlign: "center" }}>
+      <div
+        className="animate-fade-up"
+        style={{
+          fontFamily: "var(--font-display)",
+          fontSize: 32,
+          fontWeight: 700,
+          color: "#1a1a2e",
+          marginBottom: 8,
+          letterSpacing: -0.5,
+        }}
+      >
+        AI Data Analyst
+      </div>
+      <div
+        className="animate-fade-up stagger-1"
+        style={{
+          fontSize: 15,
+          color: "#64748b",
+          marginBottom: 48,
+          lineHeight: 1.6,
+        }}
+      >
+        用自然语言提问，获取数据洞察
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          gap: 16,
+          maxWidth: 720,
+          width: "100%",
+        }}
+      >
+        {SUGGESTIONS.map((s, i) => (
+          <div
+            key={i}
+            className={`suggestion-card animate-fade-up stagger-${i + 2}`}
+            onClick={() => onSend(s.text)}
+            style={{ flex: 1 }}
+          >
+            <div
+              style={{
+                fontSize: 22,
+                color: "#0d9488",
+                marginBottom: 12,
+              }}
+            >
+              {s.icon}
+            </div>
+            <div
+              style={{
+                fontSize: 11,
+                color: "#94a3b8",
+                marginBottom: 6,
+                letterSpacing: 0.5,
+              }}
+            >
+              {s.desc}
+            </div>
+            <div
+              style={{
+                fontSize: 14,
+                color: "#1a1a2e",
+                lineHeight: 1.5,
+              }}
+            >
+              {s.text}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
 
 // ── Chat component ─────────────────────────────────────
 
@@ -156,7 +391,11 @@ interface ChatProps {
   onSessionChange: (id: string) => void;
 }
 
-const Chat: React.FC<ChatProps> = ({ sessionId, onNewSession, onSessionChange }) => {
+const Chat: React.FC<ChatProps> = ({
+  sessionId,
+  onNewSession,
+  onSessionChange,
+}) => {
   const [messages, setMessages] = useState<MessageInfo[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -169,20 +408,17 @@ const Chat: React.FC<ChatProps> = ({ sessionId, onNewSession, onSessionChange })
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, loading]);
 
-  // Initialize or load session
   useEffect(() => {
     const init = async () => {
       setInitLoading(true);
       let sid = sessionId;
       if (!sid) {
-        // First time — create a new session
         const res = await createSession();
         sid = res.session_id;
         onSessionChange(sid);
       } else {
-        // Load existing messages
         const res = await getSessionMessages(sid);
         setMessages(res.messages);
       }
@@ -191,28 +427,30 @@ const Chat: React.FC<ChatProps> = ({ sessionId, onNewSession, onSessionChange })
     init();
   }, [sessionId]);
 
-  const handleSend = async () => {
-    const question = input.trim();
-    if (!question || loading || !sessionId) return;
+  const handleSend = useCallback(
+    async (text?: string) => {
+      const question = (text ?? input).trim();
+      if (!question || loading || !sessionId) return;
 
-    setInput("");
-    setLoading(true);
+      setInput("");
+      setLoading(true);
 
-    try {
-      const res = await sendChat({ question, session_id: sessionId });
-      // Reload messages from the session
-      const updated = await getSessionMessages(sessionId);
-      setMessages(updated.messages);
-      if (res.error) {
-        console.error("Chat error:", res.error);
+      try {
+        const res = await sendChat({ question, session_id: sessionId });
+        const updated = await getSessionMessages(sessionId);
+        setMessages(updated.messages);
+        if (res.error) {
+          console.error("Chat error:", res.error);
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "请求失败";
+        console.error("Send error:", msg);
+      } finally {
+        setLoading(false);
       }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "请求失败";
-      console.error("Send error:", msg);
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+    [input, loading, sessionId]
+  );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -223,8 +461,16 @@ const Chat: React.FC<ChatProps> = ({ sessionId, onNewSession, onSessionChange })
 
   if (initLoading) {
     return (
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <Spin tip="加载中..." />
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#f8f9fc",
+        }}
+      >
+        <Spin size="large" />
       </div>
     );
   }
@@ -238,12 +484,26 @@ const Chat: React.FC<ChatProps> = ({ sessionId, onNewSession, onSessionChange })
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          gap: 16,
+          gap: 20,
+          background: "#f8f9fc",
         }}
       >
-        <Text type="secondary">暂无对话</Text>
-        <Button type="primary" icon={<PlusOutlined />} onClick={onNewSession}>
-          新建对话
+        <RocketOutlined style={{ fontSize: 40, color: "#94a3b8" }} />
+        <Text style={{ color: "#64748b" }}>暂无对话</Text>
+        <Button
+          type="primary"
+          icon={<RocketOutlined />}
+          onClick={onNewSession}
+          style={{
+            background: "linear-gradient(135deg, #0d9488, #0284c7)",
+            border: "none",
+            borderRadius: 10,
+            fontWeight: 600,
+            height: 40,
+            padding: "0 24px",
+          }}
+        >
+          开始新对话
         </Button>
       </div>
     );
@@ -256,33 +516,42 @@ const Chat: React.FC<ChatProps> = ({ sessionId, onNewSession, onSessionChange })
         display: "flex",
         flexDirection: "column",
         height: "100vh",
+        background: "#f8f9fc",
       }}
     >
-      {/* Messages */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "24px 32px" }}>
+      <div
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          padding: "24px 32px",
+        }}
+      >
         {messages.length === 0 && !loading && (
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              height: "100%",
-              color: "#999",
-            }}
-          >
-            <Text style={{ fontSize: 16, marginBottom: 8 }}>欢迎使用 AI Data Analyst</Text>
-            <Text>输入业务问题，我将为您分析数据</Text>
-          </div>
+          <WelcomeScreen onSend={handleSend} />
         )}
 
-        {messages.map((msg) => (
-          <div key={msg.id} style={{ marginBottom: 20, maxWidth: 900 }}>
+        {messages.map((msg, idx) => (
+          <div
+            key={msg.id}
+            className="animate-fade-up"
+            style={{
+              marginBottom: 20,
+              maxWidth: 880,
+              marginLeft: msg.role === "user" ? "auto" : undefined,
+              animationDelay: `${Math.min(idx * 0.05, 0.3)}s`,
+            }}
+          >
             {msg.role === "user" && (
-              <div style={{ textAlign: "right", marginBottom: 8 }}>
-                <Tag color="blue" style={{ fontSize: 14, padding: "4px 12px" }}>
-                  {msg.content}
-                </Tag>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  marginBottom: 8,
+                }}
+              >
+                <div className="user-bubble-wrap">
+                  <div className="user-bubble">{msg.content}</div>
+                </div>
               </div>
             )}
             {msg.role === "assistant" && <AssistantMessage msg={msg} />}
@@ -290,41 +559,39 @@ const Chat: React.FC<ChatProps> = ({ sessionId, onNewSession, onSessionChange })
         ))}
 
         {loading && (
-          <div style={{ textAlign: "center", padding: 20 }}>
-            <Spin indicator={<LoadingOutlined style={{ fontSize: 24 }} spin />} />
-            <Text type="secondary" style={{ display: "block", marginTop: 8 }}>
-              AI 正在分析...
-            </Text>
+          <div style={{ maxWidth: 880, marginBottom: 20 }}>
+            <TypingIndicator />
           </div>
         )}
 
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input area */}
-      <div
-        style={{
-          borderTop: "1px solid #f0f0f0",
-          padding: "16px 32px",
-          background: "#fff",
-        }}
-      >
-        <div style={{ display: "flex", gap: 8, maxWidth: 900, margin: "0 auto" }}>
+      <div className="glass-input-area" style={{ padding: "16px 32px 20px" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            maxWidth: 880,
+            margin: "0 auto",
+            alignItems: "flex-end",
+          }}
+        >
           <TextArea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="请输入你的业务问题..."
+            placeholder="输入你的业务问题，例如「各品类的销售额排名」..."
             autoSize={{ minRows: 1, maxRows: 4 }}
-            style={{ flex: 1, fontSize: 14, borderRadius: 6 }}
+            style={{ flex: 1, fontSize: 14.5 }}
             disabled={loading}
           />
           <Button
+            className="send-btn"
             type="primary"
             icon={loading ? <LoadingOutlined /> : <SendOutlined />}
-            onClick={handleSend}
+            onClick={() => handleSend()}
             disabled={loading || !input.trim()}
-            style={{ height: "auto", borderRadius: 6, padding: "4px 20px" }}
           >
             发送
           </Button>
