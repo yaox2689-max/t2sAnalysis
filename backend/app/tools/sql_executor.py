@@ -29,7 +29,7 @@ class ExecutionError(Exception):
     """Base exception for SQL execution failures."""
 
 
-class TimeoutError(ExecutionError):
+class ExecutionTimeoutError(ExecutionError):
     """Raised when SQL execution exceeds the configured timeout."""
 
 
@@ -63,7 +63,7 @@ class SafeExecutor:
             )
         except asyncio.TimeoutError:
             elapsed_ms = (time.perf_counter() - start) * 1000
-            raise TimeoutError(
+            raise ExecutionTimeoutError(
                 f"SQL execution timed out after {self.timeout}s"
             ) from None
         except Exception as e:

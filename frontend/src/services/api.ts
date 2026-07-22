@@ -2,7 +2,7 @@ import axios from "axios";
 
 const api = axios.create({
   baseURL: "/api",
-  timeout: 120000,
+  timeout: 15000,
 });
 
 api.interceptors.response.use(
@@ -57,7 +57,7 @@ export interface MessageInfo {
 // ── API ────────────────────────────────────────────────
 
 export async function sendChat(req: ChatRequest): Promise<ChatResponse> {
-  const res = await api.post<ChatResponse>("/chat", req);
+  const res = await api.post<ChatResponse>("/chat", req, { timeout: 120000 });
   return res.data;
 }
 
@@ -76,6 +76,10 @@ export async function getSessionMessages(
 ): Promise<{ messages: MessageInfo[] }> {
   const res = await api.get(`/sessions/${sessionId}`);
   return res.data;
+}
+
+export async function deleteSession(sessionId: string): Promise<void> {
+  await api.delete(`/sessions/${sessionId}`);
 }
 
 export default api;

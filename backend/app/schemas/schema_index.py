@@ -18,8 +18,8 @@ Usage:
     results = index.search_tables("sales trend", top_k=3)
 """
 
+import json
 import os
-import pickle
 
 import numpy as np
 
@@ -129,10 +129,10 @@ class SchemaIndex:
         if self._column_index is not None:
             faiss.write_index(self._column_index, os.path.join(index_dir, "columns.faiss"))
 
-        with open(os.path.join(index_dir, "tables.pkl"), "wb") as f:
-            pickle.dump(self._table_metadata, f)
-        with open(os.path.join(index_dir, "columns.pkl"), "wb") as f:
-            pickle.dump(self._column_metadata, f)
+        with open(os.path.join(index_dir, "tables.json"), "w", encoding="utf-8") as f:
+            json.dump([m.model_dump() for m in self._table_metadata], f)
+        with open(os.path.join(index_dir, "columns.json"), "w", encoding="utf-8") as f:
+            json.dump([m.model_dump() for m in self._column_metadata], f)
 
     def load(self, index_dir: str) -> None:
         """Load indexes and metadata from disk."""
@@ -144,10 +144,28 @@ class SchemaIndex:
         if os.path.exists(col_path):
             self._column_index = faiss.read_index(col_path)
 
-        with open(os.path.join(index_dir, "tables.pkl"), "rb") as f:
-            self._table_metadata = pickle.load(f)
-        with open(os.path.join(index_dir, "columns.pkl"), "rb") as f:
-            self._column_metadata = pickle.load(f)
+        tables_json = os.path.join(index_dir, "tables.json")
+        columns_json = os.path.join(index_dir, "columns.json")
+
+        # Fallback: migrate from legacy pickle files
+        tables_pkl = os.path.join(index_dir, "tables.pkl")
+        columns_pkl = os.path.join(index_dir, "columns.pkl")
+
+        if os.path.exists(tables_json):
+            with open(tables_json, "r", encoding="utf-8") as f:
+                self._table_metadata = [TableMetadata(**m) for m in json.load(f)]
+        elif os.path.exists(tables_pkl):
+            import pickle as _pickle
+            with open(tables_pkl, "rb") as f:
+                self._table_metadata = _pickle.load(f)
+
+        if os.path.exists(columns_json):
+            with open(columns_json, "r", encoding="utf-8") as f:
+                self._column_metadata = [ColumnMetadata(**m) for m in json.load(f)]
+        elif os.path.exists(columns_pkl):
+            import pickle as _pickle
+            with open(columns_pkl, "rb") as f:
+                self._column_metadata = _pickle.load(f)
 
     # ── Internals ────────────────────────────────────────
 

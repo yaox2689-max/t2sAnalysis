@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Input, Button, Spin, Collapse, Table, Typography } from "antd";
+import { Input, Button, Spin, Collapse, Table, Typography, message } from "antd";
 import {
   SendOutlined,
   LoadingOutlined,
@@ -48,14 +48,21 @@ const EChart: React.FC<{ option: Record<string, unknown> }> = ({ option }) => {
 
   useEffect(() => {
     if (!chartRef.current) return;
-    if (!instanceRef.current) {
-      instanceRef.current = echarts.init(chartRef.current);
-    }
-    instanceRef.current.setOption(option, true);
+    const instance = echarts.init(chartRef.current);
+    instanceRef.current = instance;
+
+    const ro = new ResizeObserver(() => instance.resize());
+    ro.observe(chartRef.current);
+
     return () => {
-      instanceRef.current?.dispose();
+      ro.disconnect();
+      instance.dispose();
       instanceRef.current = null;
     };
+  }, []);
+
+  useEffect(() => {
+    instanceRef.current?.setOption(option, true);
   }, [option]);
 
   return (
@@ -283,7 +290,7 @@ const AssistantMessage: React.FC<{ msg: MessageInfo }> = ({ msg }) => {
         }}
       >
         <Text style={{ fontSize: 11.5, color: "#94a3b8", letterSpacing: 0.3 }}>
-          耗时 {(msg.elapsed_ms! / 1000).toFixed(1)}s
+          耗时 {((msg.elapsed_ms ?? 0) / 1000).toFixed(1)}s
         </Text>
       </div>
     </div>
@@ -401,55 +408,71 @@ const Chat: React.FC<ChatProps> = ({
   const [loading, setLoading] = useState(false);
   const [initLoading, setInitLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const loadingRef = useRef(false);
 
-  const scrollToBottom = () => {
+  const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  }, []);
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, loading]);
+  }, [messages, loading, scrollToBottom]);
 
   useEffect(() => {
+    const controller = new AbortController();
     const init = async () => {
       setInitLoading(true);
-      let sid = sessionId;
-      if (!sid) {
-        const res = await createSession();
-        sid = res.session_id;
-        onSessionChange(sid);
-      } else {
-        const res = await getSessionMessages(sid);
-        setMessages(res.messages);
+      try {
+        let sid = sessionId;
+        if (!sid) {
+          const res = await createSession();
+          if (controller.signal.aborted) return;
+          sid = res.session_id;
+          onSessionChange(sid);
+        } else {
+          const res = await getSessionMessages(sid);
+          if (controller.signal.aborted) return;
+          setMessages(res.messages);
+        }
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          console.error("Init error:", err);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setInitLoading(false);
+        }
       }
-      setInitLoading(false);
     };
     init();
-  }, [sessionId]);
+    return () => controller.abort();
+  }, [sessionId, onSessionChange]);
 
   const handleSend = useCallback(
     async (text?: string) => {
       const question = (text ?? input).trim();
-      if (!question || loading || !sessionId) return;
+      if (!question || loadingRef.current || !sessionId) return;
 
       setInput("");
+      loadingRef.current = true;
       setLoading(true);
 
       try {
         const res = await sendChat({ question, session_id: sessionId });
+        if (res.error) {
+          message.error(res.error);
+        }
         const updated = await getSessionMessages(sessionId);
         setMessages(updated.messages);
-        if (res.error) {
-          console.error("Chat error:", res.error);
-        }
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "请求失败";
-        console.error("Send error:", msg);
+        const msg = err instanceof Error ? err.message : "请求失败，请稍后重试";
+        message.error(msg);
       } finally {
+        loadingRef.current = false;
         setLoading(false);
       }
     },
-    [input, loading, sessionId]
+    [input, sessionId]
   );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

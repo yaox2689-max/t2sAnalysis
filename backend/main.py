@@ -4,8 +4,6 @@
 import os
 os.environ.setdefault("no_proxy", "*")
 os.environ.setdefault("NO_PROXY", "*")
-os.environ["HTTP_PROXY"] = ""
-os.environ["HTTPS_PROXY"] = ""
 
 # Monkey-patch httpx transport to not use proxy
 import httpx._transports.default
@@ -31,6 +29,11 @@ async def lifespan(_app: FastAPI):
 
     logger.info({"event": "app_start", "version": settings.APP_VERSION})
     yield
+    # Clean up database and redis connections on shutdown
+    from app.core.database import db
+    await db.close()
+    from app.core.redis import redis_client
+    await redis_client.close()
     logger.info({"event": "app_shutdown"})
 
 

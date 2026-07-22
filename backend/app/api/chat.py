@@ -5,6 +5,7 @@ page refreshes and can be browsed from the History page.
 """
 
 import json
+import logging
 import time
 import uuid
 from datetime import date, datetime
@@ -18,6 +19,8 @@ from app.core.config import settings
 from app.core.database import Database
 from app.core.deps import app_ctx
 
+logger = logging.getLogger("t2s_analysis")
+
 
 class _SafeEncoder(json.JSONEncoder):
     """Handle types that the default encoder cannot serialise (Decimal, date, …)."""
@@ -28,6 +31,14 @@ class _SafeEncoder(json.JSONEncoder):
         if isinstance(o, (datetime, date)):
             return o.isoformat()
         return super().default(o)
+
+
+def _convert_decimals(rows: list[dict]) -> list[dict]:
+    """Convert Decimal values to float in a list of row dicts."""
+    return [
+        {k: float(v) if isinstance(v, Decimal) else v for k, v in row.items()}
+        for row in rows
+    ]
 
 
 def _get_db() -> Database:
@@ -106,6 +117,19 @@ async def get_session(session_id: str):
     return {"messages": rows}
 
 
+@router.delete("/sessions/{session_id}")
+async def delete_session(session_id: str):
+    """Delete a session and all its messages."""
+    db = _get_db()
+    await db.execute(
+        "DELETE FROM messages WHERE session_id = :sid", {"sid": session_id}
+    )
+    await db.execute(
+        "DELETE FROM sessions WHERE id = :sid", {"sid": session_id}
+    )
+    return {"ok": True}
+
+
 # ── Chat ───────────────────────────────────────────────
 
 
@@ -141,6 +165,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         })
     except Exception as exc:
         elapsed_ms = (time.perf_counter() - start) * 1000
+        logger.error({"event": "workflow_error", "error": str(exc), "session_id": request.session_id})
         await db.execute(
             "INSERT INTO messages (session_id, role, content, elapsed_ms) "
             "VALUES (:sid, 'user', :content, 0)",
@@ -149,10 +174,10 @@ async def chat(request: ChatRequest) -> ChatResponse:
         await db.execute(
             "INSERT INTO messages (session_id, role, content, elapsed_ms) "
             "VALUES (:sid, 'assistant', :content, :elapsed)",
-            {"sid": request.session_id, "content": f"Workflow error: {exc}", "elapsed": round(elapsed_ms, 2)},
+            {"sid": request.session_id, "content": "抱歉，处理您的问题时遇到了内部错误，请稍后重试。", "elapsed": round(elapsed_ms, 2)},
         )
         return ChatResponse(
-            error=f"Workflow error: {exc}",
+            error="处理失败，请稍后重试",
             elapsed_ms=round(elapsed_ms, 2),
         )
 
@@ -186,14 +211,14 @@ async def chat(request: ChatRequest) -> ChatResponse:
     task_plan = state.get("task_plan")
     chart_option = None
     chart_type = ""
-    if ctx.chart_tool:
+    if ctx.chart_tool and query_result:
         chart_result = ctx.chart_tool.render(query_result, task_plan)
         chart_type = chart_result.chart_type
         chart_option = chart_result.echarts_option
 
     # 5. Run Insight Tool
     insight_text = ""
-    if ctx.insight_tool:
+    if ctx.insight_tool and query_result:
         try:
             insight_result = await ctx.insight_tool.summarize(
                 query_result, request.question, chart_type=chart_type,
@@ -221,7 +246,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         "rows": json.dumps(rows, ensure_ascii=False, cls=_SafeEncoder) if rows else None,
         "elapsed": round(elapsed_ms, 2),
     }
-    await db.execute(
+    message_id = await db.execute_insert(
         "INSERT INTO messages (session_id, role, content, sql_text, chart_type, "
         "echarts_option, insight, `columns`, rows_data, elapsed_ms) "
         "VALUES (:sid, 'assistant', :content, :sql, :chart_type, "
@@ -241,16 +266,12 @@ async def chat(request: ChatRequest) -> ChatResponse:
             {"title": title, "sid": request.session_id},
         )
 
-    # 9. Get the auto-generated message id
-    msg_id = await db.execute("SELECT LAST_INSERT_ID() AS id")
-    message_id = msg_id[0]["id"] if msg_id else 0
-
     return ChatResponse(
         message_id=message_id,
         session_id=request.session_id,
         sql=sql,
         columns=columns,
-        rows=json.loads(json.dumps(rows, cls=_SafeEncoder)),
+        rows=_convert_decimals(rows),
         chart_type=chart_type,
         echarts_option=chart_option or {},
         insight=insight_text,

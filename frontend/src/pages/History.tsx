@@ -55,8 +55,13 @@ const History: React.FC<HistoryProps> = ({
   }, [refreshKey]);
 
   const handleNew = async () => {
-    const res = await createSession();
-    onSelectSession(res.session_id);
+    try {
+      const res = await createSession();
+      onSelectSession(res.session_id);
+    } catch (err) {
+      console.error("Failed to create session:", err);
+      message.error("创建对话失败，请稍后重试");
+    }
   };
 
   const handleDelete = (e: React.MouseEvent, sessionId: string) => {

@@ -13,6 +13,8 @@ import openai
 from app.core.prompt_loader import prompt_loader
 from app.models.task import TaskPlan
 
+_LLM_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
+
 
 class TaskAnalyzer:
     """Analyses a user question and produces a structured TaskPlan."""
@@ -24,7 +26,7 @@ class TaskAnalyzer:
         base_url: Optional[str] = None,
         http_client: Optional[httpx.AsyncClient] = None,
     ) -> None:
-        kwargs = {"api_key": api_key, "base_url": base_url}
+        kwargs = {"api_key": api_key, "base_url": base_url, "timeout": _LLM_TIMEOUT}
         if http_client is not None:
             kwargs["http_client"] = http_client
         self.client = openai.AsyncOpenAI(**kwargs)

@@ -64,7 +64,10 @@ class PromptLoader:
     def _resolve(self, name: str) -> str:
         """Convert a dotted name to an absolute file path."""
         normalised = name.replace("/", os.sep)
-        return os.path.join(self._base_dir, f"{normalised}.md")
+        path = os.path.normpath(os.path.join(self._base_dir, f"{normalised}.md"))
+        if not path.startswith(os.path.normpath(self._base_dir)):
+            raise ValueError(f"Invalid prompt name: {name}")
+        return path
 
     def _load_raw(self, name: str) -> str:
         """Read a prompt file from disk (with caching)."""

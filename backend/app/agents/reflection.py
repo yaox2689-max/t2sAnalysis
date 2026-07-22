@@ -20,10 +20,13 @@ Usage:
 import json
 from typing import Optional
 
+import httpx
 from openai import AsyncOpenAI
 
 from app.core.prompt_loader import prompt_loader
 from app.models.task import GeneratedSQL, SchemaContext, TaskPlan
+
+_LLM_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 
 
 # ── Models ──────────────────────────────────────────────
@@ -135,7 +138,7 @@ class ReflectionLoop:
         schema_retriever: object,
         http_client: Optional[object] = None,
     ) -> None:
-        kwargs = {"api_key": api_key, "base_url": base_url}
+        kwargs = {"api_key": api_key, "base_url": base_url, "timeout": _LLM_TIMEOUT}
         if http_client is not None:
             kwargs["http_client"] = http_client
         self._client = AsyncOpenAI(**kwargs)

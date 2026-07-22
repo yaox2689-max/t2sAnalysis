@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from app.tools.sql_executor import SafeExecutor, TimeoutError, DatabaseError
+from app.tools.sql_executor import SafeExecutor, ExecutionTimeoutError, DatabaseError
 from app.core.database import db as _db
 
 
@@ -50,7 +50,7 @@ async def test_execute_truncation(executor):
 async def test_execute_timeout(executor):
     """Query exceeding timeout raises TimeoutError."""
     slow = SafeExecutor(_db, timeout=1)
-    with pytest.raises(TimeoutError, match="timed out"):
+    with pytest.raises(ExecutionTimeoutError, match="timed out"):
         await slow.execute("SELECT SLEEP(2)")
 
 

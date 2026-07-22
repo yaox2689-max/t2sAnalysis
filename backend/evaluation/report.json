@@ -1,0 +1,112 @@
+{
+  "timestamp": "2026-07-19T03:07:27.430540+00:00",
+  "total": 10,
+  "task_accuracy": 0.0,
+  "sql_executable": 0.0,
+  "sql_valid": 0.0,
+  "result_consistency": 0.0,
+  "avg_latency_ms": 0.0,
+  "avg_retry_count": 0.0,
+  "details": [
+    {
+      "id": "001",
+      "question": "最近30天销售额最高的前10个品类",
+      "task_accuracy": 0.0,
+      "sql_executable": 0.0,
+      "sql_valid": 0.0,
+      "result_consistency": 0.0,
+      "elapsed_ms": 0.0,
+      "retry_count": 0
+    },
+    {
+      "id": "002",
+      "question": "对比上月各品类销售额变化",
+      "task_accuracy": 0.0,
+      "sql_executable": 0.0,
+      "sql_valid": 0.0,
+      "result_consistency": 0.0,
+      "elapsed_ms": 0.0,
+      "retry_count": 0
+    },
+    {
+      "id": "003",
+      "question": "最近7天每日订单量趋势",
+      "task_accuracy": 0.0,
+      "sql_executable": 0.0,
+      "sql_valid": 0.0,
+      "result_consistency": 0.0,
+      "elapsed_ms": 0.0,
+      "retry_count": 0
+    },
+    {
+      "id": "004",
+      "question": "哪个品类的平均客单价最高",
+      "task_accuracy": 0.0,
+      "sql_executable": 0.0,
+      "sql_valid": 0.0,
+      "result_consistency": 0.0,
+      "elapsed_ms": 0.0,
+      "retry_count": 0
+    },
+    {
+      "id": "005",
+      "question": "上个月销量排名前5的商品",
+      "task_accuracy": 0.0,
+      "sql_executable": 0.0,
+      "sql_valid": 0.0,
+      "result_consistency": 0.0,
+      "elapsed_ms": 0.0,
+      "retry_count": 0
+    },
+    {
+      "id": "006",
+      "question": "各支付方式的订单占比",
+      "task_accuracy": 0.0,
+      "sql_executable": 0.0,
+      "sql_valid": 0.0,
+      "result_consistency": 0.0,
+      "elapsed_ms": 0.0,
+      "retry_count": 0
+    },
+    {
+      "id": "007",
+      "question": "3月份销售额下降的主要原因是什么",
+      "task_accuracy": 0.0,
+      "sql_executable": 0.0,
+      "sql_valid": 0.0,
+      "result_consistency": 0.0,
+      "elapsed_ms": 0.0,
+      "retry_count": 0
+    },
+    {
+      "id": "008",
+      "question": "最近90天退货率最高的品类",
+      "task_accuracy": 0.0,
+      "sql_executable": 0.0,
+      "sql_valid": 0.0,
+      "result_consistency": 0.0,
+      "elapsed_ms": 0.0,
+      "retry_count": 0
+    },
+    {
+      "id": "009",
+      "question": "各城市订单分布",
+      "task_accuracy": 0.0,
+      "sql_executable": 0.0,
+      "sql_valid": 0.0,
+      "result_consistency": 0.0,
+      "elapsed_ms": 0.0,
+      "retry_count": 0
+    },
+    {
+      "id": "010",
+      "question": "每个月的销售额走势",
+      "task_accuracy": 0.0,
+      "sql_executable": 0.0,
+      "sql_valid": 0.0,
+      "result_consistency": 0.0,
+      "elapsed_ms": 0.0,
+      "retry_count": 0
+    }
+  ]
+}

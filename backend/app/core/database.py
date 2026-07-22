@@ -72,6 +72,20 @@ class Database:
             await conn.commit()
             return []
 
+    async def execute_insert(self, sql: str, params: Optional[Union[dict, tuple]] = None) -> int:
+        """Execute an INSERT statement and return the lastrowid.
+
+        Returns 0 if no row was inserted.
+        """
+        if self._engine is None:
+            raise RuntimeError("Database not initialised — call db.init() first")
+
+        async with self._engine.connect() as conn:
+            conn: AsyncConnection
+            result = await conn.execute(text(sql), params)
+            await conn.commit()
+            return result.lastrowid if result.lastrowid else 0
+
     async def health(self) -> bool:
         """Quick connectivity check — returns True if the database responds."""
         try:
