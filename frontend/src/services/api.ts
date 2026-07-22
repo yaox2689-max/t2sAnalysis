@@ -29,7 +29,7 @@ export interface ChatResponse {
   chart_type: string;
   echarts_option: Record<string, unknown>;
   insight: string;
-  elapsed_ms: number;
+  elapsed_ms: number | null;
   error: string | null;
 }
 

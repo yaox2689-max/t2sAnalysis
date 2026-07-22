@@ -23,7 +23,7 @@ conn = pymysql.connect(
 cur = conn.cursor()
 
 for t in ["reviews", "order_items", "payments", "orders", "products", "customers", "sellers", "product_category"]:
-    cur.execute("DELETE FROM %s" % t)
+    cur.execute(f"DELETE FROM `{t}`")
 
 cur.execute(
     "INSERT INTO product_category (product_category_name, product_category_name_english) VALUES "

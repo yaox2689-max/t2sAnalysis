@@ -27,6 +27,7 @@ const SettingItem: React.FC<SettingItemProps> = ({
 }) => (
   <div
     className="animate-fade-up"
+    className="setting-item"
     style={{
       background: "#ffffff",
       border: "1px solid #e5e8ef",
@@ -37,14 +38,6 @@ const SettingItem: React.FC<SettingItemProps> = ({
       gap: 16,
       boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
       transition: "box-shadow 0.3s ease, border-color 0.3s ease",
-    }}
-    onMouseEnter={(e) => {
-      (e.currentTarget as HTMLElement).style.boxShadow = "0 4px 12px rgba(0,0,0,0.06)";
-      (e.currentTarget as HTMLElement).style.borderColor = "rgba(13,148,136,0.25)";
-    }}
-    onMouseLeave={(e) => {
-      (e.currentTarget as HTMLElement).style.boxShadow = "0 1px 2px rgba(0,0,0,0.04)";
-      (e.currentTarget as HTMLElement).style.borderColor = "#e5e8ef";
     }}
   >
     <div

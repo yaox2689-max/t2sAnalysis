@@ -44,7 +44,7 @@ def _convert_decimals(rows: list[dict]) -> list[dict]:
 def _get_db() -> Database:
     """Ensure database is initialised and return the global instance."""
     from app.core.database import db
-    if db._engine is None:
+    if not db.is_initialized:
         db.init()
     return db
 
@@ -57,6 +57,13 @@ router = APIRouter(prefix="/api", tags=["chat"])
 class ChatRequest(BaseModel):
     question: str
     session_id: str
+
+    class Config:
+        json_schema_extra = {
+            "properties": {
+                "question": {"maxLength": 2000},
+            }
+        }
 
 
 class ChatResponse(BaseModel):
@@ -141,8 +148,6 @@ async def chat(request: ChatRequest) -> ChatResponse:
     session's message history.
     """
     ctx = await app_ctx.ensure_initialized()
-    if ctx is None:
-        raise HTTPException(status_code=503, detail="System not initialized")
 
     # 1. Verify session exists and save user message
     db = _get_db()

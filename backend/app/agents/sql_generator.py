@@ -14,6 +14,7 @@ Usage:
 """
 
 import json
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -114,14 +115,6 @@ class SQLGenerator:
 
         raw = response.choices[0].message.content or ""
         parsed = self._parse(raw, schema_context)
-        # If the SQL is valid (passes schema check), return as-is.
-        # If it failed due to parse issues but has SQL, keep it for downstream.
-        if parsed.valid:
-            return parsed
-        if parsed.sql and "Failed to parse" in parsed.explanation:
-            return GeneratedSQL(
-                sql=parsed.sql, explanation=parsed.explanation, valid=True
-            )
         return parsed
 
     def _parse(self, raw: str, schema: SchemaContext) -> GeneratedSQL:
@@ -134,7 +127,6 @@ class SQLGenerator:
             data = json.loads(raw)
         except (json.JSONDecodeError, TypeError, ValueError):
             # Try extracting JSON from markdown code fence
-            import re
             m = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', raw)
             if m:
                 try:

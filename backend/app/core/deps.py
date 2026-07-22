@@ -69,11 +69,14 @@ class AppContext:
             # 4. Schema Index
             from app.schemas.schema_index import SchemaIndex
             index = SchemaIndex(repo, embed_provider)
+            schema_ok = False
             try:
                 await index.build()
+                schema_ok = True
                 logger.info({"event": "schema_index_built"})
             except Exception as exc:
-                logger.error({"event": "schema_index_build_failed", "error": str(exc)})
+                logger.error({"event": "schema_index_build_failed", "error": str(exc)}, exc_info=True)
+                logger.warning({"event": "schema_index_degraded", "detail": "Falling back to keyword-only retrieval"})
 
             # 5. Schema Retriever
             from app.schemas.schema_retriever import SchemaRetriever

@@ -17,8 +17,12 @@ Usage:
     context = await retriever.retrieve("最近30天各品类销售额趋势")
 """
 
+import logging
+
 from app.models.task import SchemaContext
 from app.schemas.schema_index import SchemaIndex
+
+logger = logging.getLogger("t2s_analysis")
 
 # ── Defaults ────────────────────────────────────────────
 
@@ -161,8 +165,8 @@ class SchemaRetriever:
             try:
                 raw = await self._repo.get_sample_rows(table)
                 rows = raw or []
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning({"event": "sample_rows_failed", "table": table, "error": str(exc)})
 
             # Rough token budget for this table
             table_text = table

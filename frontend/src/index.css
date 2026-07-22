@@ -360,3 +360,8 @@ html, body {
   box-shadow: var(--shadow-md) !important;
   transform: translateX(4px);
 }
+
+.setting-item:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06) !important;
+  border-color: rgba(13, 148, 136, 0.25) !important;
+}

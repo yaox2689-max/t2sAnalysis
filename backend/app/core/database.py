@@ -25,6 +25,11 @@ class Database:
         self._engine: AsyncEngine | None = None
 
     @property
+    def is_initialized(self) -> bool:
+        """Whether the engine has been initialised."""
+        return self._engine is not None
+
+    @property
     def url(self) -> str:
         return (
             f"mysql+aiomysql://{settings.DB_USER}:{settings.DB_PASSWORD}"

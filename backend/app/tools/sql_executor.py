@@ -56,12 +56,15 @@ class SafeExecutor:
         """Execute SQL with timeout, row limit, and error handling."""
         start = time.perf_counter()
 
+        task = asyncio.create_task(self._db.execute(sql))
         try:
-            rows = await asyncio.wait_for(
-                self._db.execute(sql),
-                timeout=self.timeout,
-            )
+            rows = await asyncio.wait_for(asyncio.shield(task), timeout=self.timeout)
         except asyncio.TimeoutError:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
             elapsed_ms = (time.perf_counter() - start) * 1000
             raise ExecutionTimeoutError(
                 f"SQL execution timed out after {self.timeout}s"

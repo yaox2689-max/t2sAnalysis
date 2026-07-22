@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Typography, Button, Empty, Spin, Modal, message } from "antd";
 import {
   MessageOutlined,
@@ -38,20 +38,27 @@ const History: React.FC<HistoryProps> = ({
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const loadSessions = async () => {
-    setLoading(true);
-    try {
-      const res = await listSessions();
-      setSessions(res.sessions);
-    } catch (err) {
-      console.error("Failed to load sessions:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadSessions();
+    const controller = new AbortController();
+    const load = async () => {
+      setLoading(true);
+      try {
+        const res = await listSessions();
+        if (!controller.signal.aborted) {
+          setSessions(res.sessions);
+        }
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          console.error("Failed to load sessions:", err);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      }
+    };
+    load();
+    return () => controller.abort();
   }, [refreshKey]);
 
   const handleNew = async () => {
@@ -76,8 +83,8 @@ const History: React.FC<HistoryProps> = ({
         try {
           await deleteSession(sessionId);
           message.success("已删除");
+          setSessions((prev) => prev.filter((s) => s.id !== sessionId));
           onDeleteSession(sessionId);
-          loadSessions();
         } catch {
           message.error("删除失败");
         }
@@ -239,6 +246,7 @@ const History: React.FC<HistoryProps> = ({
                     danger
                     size="small"
                     icon={<DeleteOutlined />}
+                    aria-label="删除对话"
                     onClick={(e) => handleDelete(e, item.id)}
                     style={{ opacity: 0.5, transition: "opacity 0.2s" }}
                   />

@@ -81,39 +81,29 @@ class SQLValidator:
 
         warnings: list[str] = []
 
-        # ── Scan all nodes for write operations ──────────
+        # ── Single AST pass for all checks ─────────────────
+        has_where = False
         for node in tree.walk():
+            # Write operations → immediate failure
             if isinstance(node, tuple(_WRITE_OPS)):
                 return ValidationResult(
                     passed=False,
                     risk_level=RiskLevel.HIGH,
                     warnings=[f"WRITE_OPERATION: {node.key.upper()}"],
                 )
-
-        # ── Scan for dangerous patterns ──────────────────
-        for node in tree.walk():
-            if isinstance(node, exp.Select):
-                if not node.args.get("where") and node.args.get("from_"):
-                    warnings.append("FULL_TABLE_SCAN")
-                    break
-
-        # Cross join detection — look for Join nodes with side="RIGHT" or kind="CROSS"
-        from sqlglot.expressions import Join
-        for node in tree.walk():
-            if isinstance(node, Join):
-                if node.kind and node.kind.upper() == "CROSS":
-                    warnings.append("CROSS_JOIN")
-                    break
-
-        for node in tree.walk():
+            # Full table scan detection
+            if isinstance(node, exp.Select) and node.args.get("from_") and not node.args.get("where"):
+                has_where = True
+                warnings.append("FULL_TABLE_SCAN")
+            # Cross join detection
+            if isinstance(node, exp.Join) and node.kind and node.kind.upper() == "CROSS":
+                warnings.append("CROSS_JOIN")
+            # Left fuzzy LIKE detection
             if isinstance(node, exp.Like):
                 right = node.find(exp.Literal)
-                if right and isinstance(right, exp.Literal):
-                    if right.this.startswith("%"):
-                        warnings.append("LEFT_FUZZY_LIKE")
-                        break
-
-        for node in tree.walk():
+                if right and isinstance(right, exp.Literal) and right.this.startswith("%"):
+                    warnings.append("LEFT_FUZZY_LIKE")
+            # ORDER BY RAND() detection
             if isinstance(node, exp.Order):
                 for expr in node.expressions:
                     if isinstance(expr, exp.Ordered) and isinstance(expr.this, exp.Rand):

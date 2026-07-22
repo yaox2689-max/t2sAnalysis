@@ -10,6 +10,8 @@ Usage:
     result = await graph.ainvoke({"question": "销售额趋势", "max_retries": 3})
 """
 
+from functools import partial
+
 from langgraph.graph import END, StateGraph
 
 from app.agents.state import AgentState
@@ -28,7 +30,7 @@ from app.graph.routers import (
 )
 
 
-def _partial(fn, **kwargs):
+def _async_partial(fn, **kwargs):
     """Bind keyword arguments to an async node function.
 
     LangGraph nodes receive ``(state)``; this wrapper injects
@@ -56,12 +58,12 @@ def build_graph(
     workflow = StateGraph(AgentState)
 
     # ── Nodes ─────────────────────────────────────────────
-    workflow.add_node("analyze", _partial(analyze_task_node, analyzer=analyzer))
-    workflow.add_node("retrieve", _partial(retrieve_schema_node, retriever=retriever))
-    workflow.add_node("generate", _partial(generate_sql_node, generator=generator))
-    workflow.add_node("validate", _partial(validate_sql_node, validator=validator))
-    workflow.add_node("execute", _partial(execute_sql_node, executor=executor))
-    workflow.add_node("reflect", _partial(reflect_node, reflection=reflection))
+    workflow.add_node("analyze", _async_partial(analyze_task_node, analyzer=analyzer))
+    workflow.add_node("retrieve", _async_partial(retrieve_schema_node, retriever=retriever))
+    workflow.add_node("generate", _async_partial(generate_sql_node, generator=generator))
+    workflow.add_node("validate", _async_partial(validate_sql_node, validator=validator))
+    workflow.add_node("execute", _async_partial(execute_sql_node, executor=executor))
+    workflow.add_node("reflect", _async_partial(reflect_node, reflection=reflection))
 
     # ── Edges ─────────────────────────────────────────────
     workflow.add_edge("analyze", "retrieve")

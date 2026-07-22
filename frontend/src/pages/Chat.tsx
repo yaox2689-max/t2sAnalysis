@@ -10,7 +10,29 @@ import {
   SearchOutlined,
   LineChartOutlined,
 } from "@ant-design/icons";
-import * as echarts from "echarts";
+import * as echarts from "echarts/core";
+import { BarChart, LineChart, PieChart, ScatterChart } from "echarts/charts";
+import {
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  DataZoomComponent,
+  TitleComponent,
+} from "echarts/components";
+import { CanvasRenderer } from "echarts/renderers";
+
+echarts.use([
+  BarChart,
+  LineChart,
+  PieChart,
+  ScatterChart,
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  DataZoomComponent,
+  TitleComponent,
+  CanvasRenderer,
+]);
 import {
   sendChat,
   createSession,
@@ -350,9 +372,12 @@ const WelcomeScreen: React.FC<{ onSend: (text: string) => void }> = ({
       >
         {SUGGESTIONS.map((s, i) => (
           <div
-            key={i}
+            key={s.text}
+            role="button"
+            tabIndex={0}
             className={`suggestion-card animate-fade-up stagger-${i + 2}`}
             onClick={() => onSend(s.text)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onSend(s.text); }}
             style={{ flex: 1 }}
           >
             <div
@@ -409,6 +434,10 @@ const Chat: React.FC<ChatProps> = ({
   const [initLoading, setInitLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
+  const inputRef = useRef(input);
+  inputRef.current = input;
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -448,39 +477,59 @@ const Chat: React.FC<ChatProps> = ({
     return () => controller.abort();
   }, [sessionId, onSessionChange]);
 
+  const sendAbortRef = useRef<AbortController | null>(null);
+
   const handleSend = useCallback(
     async (text?: string) => {
-      const question = (text ?? input).trim();
-      if (!question || loadingRef.current || !sessionId) return;
+      const question = (text ?? inputRef.current).trim();
+      const sid = sessionIdRef.current;
+      if (!question || loadingRef.current || !sid) return;
 
       setInput("");
       loadingRef.current = true;
       setLoading(true);
 
+      const controller = new AbortController();
+      sendAbortRef.current = controller;
+
       try {
-        const res = await sendChat({ question, session_id: sessionId });
+        const res = await sendChat({ question, session_id: sid });
+        if (controller.signal.aborted) return;
         if (res.error) {
           message.error(res.error);
         }
-        const updated = await getSessionMessages(sessionId);
+        const updated = await getSessionMessages(sid);
+        if (controller.signal.aborted) return;
         setMessages(updated.messages);
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "请求失败，请稍后重试";
-        message.error(msg);
+        if (!controller.signal.aborted) {
+          const msg = err instanceof Error ? err.message : "请求失败，请稍后重试";
+          message.error(msg);
+        }
       } finally {
-        loadingRef.current = false;
-        setLoading(false);
+        if (!controller.signal.aborted) {
+          loadingRef.current = false;
+          setLoading(false);
+        }
       }
     },
-    [input, sessionId]
+    []
   );
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
+  // Cleanup send request on unmount
+  useEffect(() => {
+    return () => sendAbortRef.current?.abort();
+  }, []);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        handleSend();
+      }
+    },
+    [handleSend]
+  );
 
   if (initLoading) {
     return (

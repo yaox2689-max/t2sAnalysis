@@ -1,9 +1,49 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { ConfigProvider } from "antd";
+import { ConfigProvider, Button, Result } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import App from "./App";
 import "./index.css";
+
+// ── Error Boundary ──────────────────────────────────────
+interface ErrorBoundaryState {
+  hasError: boolean;
+}
+
+class ErrorBoundary extends React.Component<
+  React.PropsWithChildren,
+  ErrorBoundaryState
+> {
+  state: ErrorBoundaryState = { hasError: false };
+
+  static getDerivedStateFromError(): ErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("Uncaught error:", error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh" }}>
+          <Result
+            status="error"
+            title="页面出错了"
+            subTitle="发生了意外错误，请刷新页面重试"
+            extra={
+              <Button type="primary" onClick={() => window.location.reload()}>
+                刷新页面
+              </Button>
+            }
+          />
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -68,7 +108,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         },
       }}
     >
-      <App />
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
     </ConfigProvider>
   </React.StrictMode>,
 );

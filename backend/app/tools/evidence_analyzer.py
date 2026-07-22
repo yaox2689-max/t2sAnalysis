@@ -27,12 +27,14 @@ Usage:
 import json
 from typing import Optional
 
+import httpx
 from openai import AsyncOpenAI
 
 from app.core.prompt_loader import prompt_loader
 from app.models.query import QueryResult
 
 _PREVIEW_MAX_ROWS = 20
+_LLM_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 
 
 def _load_prompt() -> str:
@@ -131,7 +133,7 @@ class EvidenceAnalyzer:
         model: str,
         base_url: Optional[str] = None,
     ) -> None:
-        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=_LLM_TIMEOUT)
         self._model = model
         self._prompt = _load_prompt()
 

@@ -48,10 +48,6 @@ BASE_STATE: AgentState = {
 }
 
 
-async def _noop(*args, **kwargs):
-    pass
-
-
 class FakeAnalyzer:
     async def analyze(self, question, history=None):
         return SAMPLE_PLAN
@@ -149,37 +145,44 @@ class TestRouters:
 
 
 class TestNodes:
+    @pytest.mark.asyncio
     async def test_analyze_task_node(self):
         result = await analyze_task_node(BASE_STATE, analyzer=FakeAnalyzer())
         assert result["task_plan"].task_type == "aggregation"
 
+    @pytest.mark.asyncio
     async def test_retrieve_schema_node(self):
         result = await retrieve_schema_node(BASE_STATE, retriever=FakeRetriever())
         assert "orders" in result["schema_context"].tables
 
+    @pytest.mark.asyncio
     async def test_generate_sql_node(self):
         s = {**BASE_STATE, "task_plan": SAMPLE_PLAN, "schema_context": SAMPLE_SCHEMA}
         result = await generate_sql_node(s, generator=FakeGenerator())
         assert result["generated_sql"].valid is True
         assert result["current_sql"] == "SELECT * FROM orders"
 
+    @pytest.mark.asyncio
     async def test_validate_sql_node(self):
         s = {**BASE_STATE, "current_sql": "SELECT 1"}
         result = await validate_sql_node(s, validator=FakeValidator())
         assert result["validation_result"].passed is True
 
+    @pytest.mark.asyncio
     async def test_execute_sql_node_success(self):
         s = {**BASE_STATE, "current_sql": "SELECT 1"}
         result = await execute_sql_node(s, executor=FakeExecutor())
         assert result["query_result"] is not None
         assert result["query_result"].columns == ["id"]
 
+    @pytest.mark.asyncio
     async def test_execute_sql_node_failure(self):
         s = {**BASE_STATE, "current_sql": "SELECT 1"}
         result = await execute_sql_node(s, executor=FakeExecutorFails())
         assert result["query_result"] is None
         assert "Table not found" in result["errors"][0]
 
+    @pytest.mark.asyncio
     async def test_reflect_node_sets_next_action(self):
         s = {**BASE_STATE, "current_sql": "SELECT * FROM bad_table", "errors": ["Table not found"]}
         result = await reflect_node(s, reflection=FakeReflection(next_action="retry_retrieve"))

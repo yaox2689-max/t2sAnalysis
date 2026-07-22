@@ -106,7 +106,7 @@ class SchemaIndex:
         self, query_vec: list[float], top_k: int = 3
     ) -> list[tuple[TableMetadata, float]]:
         """Search the table index by query vector."""
-        if self._table_index is None:
+        if self._table_index is None or not self._table_metadata:
             return []
         return self._search(self._table_index, self._table_metadata, query_vec, top_k)
 
@@ -114,7 +114,7 @@ class SchemaIndex:
         self, query_vec: list[float], top_k: int = 5
     ) -> list[tuple[ColumnMetadata, float]]:
         """Search the column index by query vector."""
-        if self._column_index is None:
+        if self._column_index is None or not self._column_metadata:
             return []
         return self._search(self._column_index, self._column_metadata, query_vec, top_k)
 
@@ -147,25 +147,12 @@ class SchemaIndex:
         tables_json = os.path.join(index_dir, "tables.json")
         columns_json = os.path.join(index_dir, "columns.json")
 
-        # Fallback: migrate from legacy pickle files
-        tables_pkl = os.path.join(index_dir, "tables.pkl")
-        columns_pkl = os.path.join(index_dir, "columns.pkl")
-
         if os.path.exists(tables_json):
             with open(tables_json, "r", encoding="utf-8") as f:
                 self._table_metadata = [TableMetadata(**m) for m in json.load(f)]
-        elif os.path.exists(tables_pkl):
-            import pickle as _pickle
-            with open(tables_pkl, "rb") as f:
-                self._table_metadata = _pickle.load(f)
-
         if os.path.exists(columns_json):
             with open(columns_json, "r", encoding="utf-8") as f:
                 self._column_metadata = [ColumnMetadata(**m) for m in json.load(f)]
-        elif os.path.exists(columns_pkl):
-            import pickle as _pickle
-            with open(columns_pkl, "rb") as f:
-                self._column_metadata = _pickle.load(f)
 
     # ── Internals ────────────────────────────────────────
 
