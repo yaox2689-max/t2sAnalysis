@@ -11,6 +11,7 @@ venv/
 node_modules/
 dist/
 .next/
+*.tsbuildinfo
 
 # IDE
 .idea/
@@ -29,6 +30,11 @@ Thumbs.db
 *.log
 logs/
 
+# Build cache
 frontend/.vite/
 .claude/
+
+# Data / scripts
 backend/scripts/olist_data/
+backend/run.bat
+backend/evaluation/report.json
