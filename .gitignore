@@ -28,3 +28,7 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+frontend/.vite/
+.claude/
+backend/scripts/olist_data/
