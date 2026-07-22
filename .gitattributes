@@ -1,0 +1,4 @@
+# GitHub Linguist overrides
+frontend/.vite/** linguist-vendored
+frontend/dist/** linguist-vendored
+*.json linguist-generated
