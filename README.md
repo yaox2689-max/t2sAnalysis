@@ -2,65 +2,77 @@
 
 智能数据分析 Agent — 用自然语言提问，自动完成 SQL 生成、执行、可视化和业务洞察。
 
-**核心理念：一套引擎，一个数据库，万物皆 Dataset。**
+**万物皆 Dataset — 一个抽象，统一所有数据源。**
 
 ```mermaid
 flowchart TD
     User([用户提问])
 
-    subgraph Ingest[数据接入]
-        Upload[文件上传<br/>Excel / CSV] --> Mgr[DatasetManager<br/>导入 / 删除]
-        Mgr --> Profile[SchemaProfiler<br/>语义类型画像]
+    subgraph AI["AI Analytics Engine — LangGraph Agent"]
+        direction TB
+        Planner["意图分析<br/>理解问题 + 提取参数"]
+        SQLGen["SQL 生成<br/>LLM 生成查询"]
+        Validate["自动校验<br/>语法 + 安全检查"]
+        Execute["执行查询"]
+        Reflect["自我修正<br/>错误分类 + 重试"]
+
+        Planner --> SQLGen
+        SQLGen --> Validate
+        Validate -->|通过| Execute
+        Validate -->|失败| Reflect
+        Execute -->|失败| Reflect
+        Reflect -->|重试| SQLGen
     end
 
-    subgraph Cat[数据目录]
-        Reg[DatasetRegistry<br/>Catalog]
-        PB[PromptBuilder<br/>Schema + Profile → Prompt]
+    subgraph DS["Dataset Layer — 数据资产"]
+        direction TB
+        Registry["数据目录<br/>统一管理所有数据集"]
+        Profile["数据画像<br/>列级统计 + 语义类型"]
+        Context["上下文构建<br/>Schema + 画像 → AI 可理解"]
+        Registry --> Profile
+        Profile --> Context
     end
 
-    subgraph Pipeline[AI Pipeline — LangGraph]
-        TA[Task Analyzer<br/>意图 → TaskPlan]
-        GEN[SQL Generator<br/>LLM → SQL]
-        VAL[Validator<br/>sqlglot AST]
-        EXE[DuckDB Executor<br/>安全执行]
-        REF[Reflection<br/>错误分类 + 重试]
+    subgraph DL["Data Layer — 数据存储"]
+        direction TB
+        Upload["Excel / CSV 上传"]
+        Manager["数据集管理器<br/>导入 / 清洗 / 注册"]
+        DuckDB[("DuckDB<br/>分析引擎")]
+        MySQL[("MySQL<br/>业务元数据")]
+        Upload --> Manager
+        Manager --> DuckDB
+        Manager --> MySQL
     end
 
-    subgraph Output[结果处理]
-        CHART[Chart Tool<br/>规则引擎 → ECharts]
-        INSIGHT[Insight Tool<br/>LLM 业务总结]
+    subgraph Out["Output — 分析结果"]
+        direction LR
+        Chart["可视化<br/>自动选图 → ECharts"]
+        Insight["业务洞察<br/>LLM 总结"]
+        SQLResult["SQL + 数据表"]
     end
 
-    subgraph Store[存储层]
-        DDB[(DuckDB<br/>分析引擎)]
-        MySQL[(MySQL<br/>业务元数据)]
-    end
+    User --> AI
+    Context -.->|Schema 上下文| SQLGen
+    Execute -->|查询| DuckDB
+    Manager -->|注册| Registry
+    Execute --> Out
 
-    User --> TA
-    Profile --> DDB
-    Mgr --> Reg
-    Reg --> PB
-    PB --> GEN
-    TA --> GEN
-    GEN --> VAL
-    VAL -->|通过| EXE
-    VAL -->|失败| REF
-    EXE --> DDB
-    EXE -->|成功| CHART
-    EXE -->|成功| INSIGHT
-    EXE -->|失败| REF
-    REF -->|重试| GEN
-    Reg --> MySQL
-    CHART --> Response([SQL + 图表 + 洞察])
-    INSIGHT --> Response
+    classDef aiStyle fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#1e1b4b
+    classDef dsStyle fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e293b
+    classDef dlStyle fill:#f1f5f9,stroke:#64748b,stroke-width:2px,color:#1e293b
+    classDef outStyle fill:#d1fae5,stroke:#059669,stroke-width:2px,color:#1e293b
+
+    class Planner,SQLGen,Validate,Execute,Reflect aiStyle
+    class Registry,Profile,Context dsStyle
+    class Upload,Manager,DuckDB,MySQL dlStyle
+    class Chart,Insight,SQLResult outStyle
 ```
 
 ## Features
 
 - **自然语言 → SQL** — 输入中文问题，自动生成 SQL 查询
-- **万物皆 Dataset** — Excel、CSV、内置 Demo 统一抽象为 Dataset
+- **万物皆 Dataset** — Excel、CSV 统一抽象为 Dataset
 - **数据画像** — 自动推断语义类型（dimension / measure / time / identifier）
-- **PromptBuilder** — Catalog → PromptContext → Markdown，独立组装
 - **统一分析引擎** — 所有查询走 DuckDB，AI 无需区分数据来源
 - **结构化错误修复** — Error Classifier 分类处理，最多 3 次重试
 - **多层安全防护** — sqlglot AST 校验 + 写操作阻断 + 运行时限
@@ -77,18 +89,18 @@ flowchart TD
 │   Business Database  │        Analytics Engine           │
 │      (MySQL)         │           (DuckDB)                │
 ├──────────────────────┼───────────────────────────────────┤
-│ users                │ 用户上传的数据集              │
-│ sessions             │ （Excel / CSV → DuckDB）      │
-│ messages             │                               │
-│ datasets             │                               │
+│ users                │ 用户上传的数据集                    │
+│ sessions             │ （Excel / CSV → DuckDB）           │
+│ messages             │                                   │
+│ datasets             │                                   │
 ├──────────────────────┼───────────────────────────────────┤
-│ AI 永远不查询         │ AI 只查询这里                     │
+│ AI 永远不查询         │ AI 只查询这里                      │
 └──────────────────────┴───────────────────────────────────┘
 ```
 
 | 层级 | 模块 | 职责 |
 |------|------|------|
-| **数据接入** | DatasetManager | Excel/CSV → DuckDB，导入 / 删除 / 归档 |
+| **数据接入** | DatasetManager | Excel/CSV → DuckDB，导入 / 删除 |
 | **数据目录** | DatasetRegistry | Catalog 管理，AI 的唯一数据入口 |
 | **画像** | SchemaProfiler | 列级统计 + 语义类型推断 |
 | **Prompt** | PromptBuilder | Catalog → PromptContext → Markdown |
@@ -119,7 +131,7 @@ cd t2sAnalysis
 cp .env.example .env
 # 编辑 .env，填入 LLM_API_KEY
 
-# 3. 启动后端 + 数据库（自动建表 + 导入 Demo 数据）
+# 3. 启动后端 + 数据库（自动建表）
 docker compose up -d
 
 # 4. 启动前端（另开终端）
@@ -187,7 +199,7 @@ npm run dev
 │   │   │   └── routers.py       条件路由
 │   │   ├── models/              Pydantic 契约
 │   │   ├── services/            业务逻辑
-│   │   │   ├── dataset_manager.py   Dataset 导入 / 删除 / 归档
+│   │   │   ├── dataset_manager.py   Dataset 导入 / 删除
 │   │   │   ├── dataset_registry.py  Catalog 管理
 │   │   │   ├── prompt_builder.py    PromptContext 组装
 │   │   │   └── task_analyzer.py     NLP → TaskPlan
