@@ -42,3 +42,4 @@ backend/evaluation/report.json
 # DuckDB runtime data
 backend/data/analysis.duckdb
 backend/data/analysis.duckdb.wal
+backend/data/uploads/
