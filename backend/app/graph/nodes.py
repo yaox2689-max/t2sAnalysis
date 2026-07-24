@@ -19,6 +19,14 @@ from app.tools.sql_validator import ValidationResult
 logger = logging.getLogger("t2s_analysis")
 
 
+def _log(state: AgentState, data: dict) -> dict:
+    """Inject trace_id into log data."""
+    tid = state.get("trace_id")
+    if tid:
+        data["trace_id"] = tid
+    return data
+
+
 def _first_error(state: AgentState) -> str:
     errors = state.get("errors") or []
     return errors[0] if errors else "Unknown error"
@@ -86,11 +94,11 @@ async def generate_sql_node(
     ctx = state["schema_context"]
     prompt_text = state.get("prompt_text")
     question = state.get("question", "")
-    logger.info({"event": "generate_sql_start", "question": question[:100], "tables": ctx.tables if ctx else []})
+    logger.info(_log(state, {"event": "generate_sql_start", "question": question[:100], "tables": ctx.tables if ctx else []}))
     result: GeneratedSQL = await generator.generate(  # type: ignore[union-attr]
         plan, ctx, prompt_text=prompt_text, question=question,
     )
-    logger.info({"event": "generate_sql_done", "sql": result.sql[:200], "valid": result.valid})
+    logger.info(_log(state, {"event": "generate_sql_done", "sql": result.sql[:200], "valid": result.valid}))
     return {
         "generated_sql": result,
         "current_sql": result.sql,
@@ -124,17 +132,17 @@ async def execute_sql_node(
     On error, appends the error message to ``errors``.
     """
     sql = state.get("current_sql") or ""
-    logger.info({"event": "execute_sql_start", "sql": sql[:200]})
+    logger.info(_log(state, {"event": "execute_sql_start", "sql": sql[:200]}))
     try:
         result: QueryResult = await executor.execute(sql)  # type: ignore[union-attr]
-        logger.info({
+        logger.info(_log(state, {
             "event": "execute_sql_success",
             "columns": result.columns,
             "row_count": result.row_count,
-        })
+        }))
         return {"query_result": result}
     except Exception as exc:
-        logger.error({"event": "execute_sql_error", "sql": sql[:200], "error": str(exc)})
+        logger.error(_log(state, {"event": "execute_sql_error", "sql": sql[:200], "error": str(exc)}))
         return {
             "query_result": None,
             "errors": (state.get("errors") or []) + [str(exc)],

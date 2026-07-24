@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from app.core.config import settings
 from app.core.database import Database
 from app.core.deps import app_ctx
+from app.core.tracing import new_trace_id
 
 logger = logging.getLogger("t2s_analysis")
 
@@ -182,10 +183,13 @@ async def chat(request: ChatRequest) -> ChatResponse:
     start = time.perf_counter()
 
     # 2. Run the LangGraph Workflow
+    trace_id = new_trace_id()
+    logger.info({"event": "chat_start", "trace_id": trace_id, "session_id": request.session_id})
     try:
         state = await ctx.graph.ainvoke({
             "question": request.question,
             "session_id": request.session_id,
+            "trace_id": trace_id,
             "history": [],
             "retry_count": 0,
             "max_retries": 3,
@@ -221,6 +225,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     logger.info({
         "event": "workflow_result",
+        "trace_id": trace_id,
         "has_sql": bool(sql),
         "has_result": query_result is not None,
         "columns": columns,

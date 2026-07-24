@@ -83,7 +83,8 @@ class Bootstrap:
 
         # 7. Init DuckDBExecutor
         from app.tools.duckdb_executor import DuckDBExecutor
-        self.executor = DuckDBExecutor(duckdb_engine)
+        from app.core.config import settings as _settings
+        self.executor = DuckDBExecutor(duckdb_engine, timeout=_settings.SQL_TIMEOUT)
 
         # 8. Init DatasetManager
         from app.services.dataset_manager import DatasetManager
