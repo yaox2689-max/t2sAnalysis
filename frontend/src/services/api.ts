@@ -82,4 +82,59 @@ export async function deleteSession(sessionId: string): Promise<void> {
   await api.delete(`/sessions/${sessionId}`);
 }
 
+// ── Dataset API ─────────────────────────────────────
+
+export interface DatasetColumn {
+  name: string;
+  type: string;
+  semantic_type?: string;
+  original_name?: string;
+}
+
+export interface DatasetPreview {
+  dataset_id: string;
+  table_name: string;
+  name: string;
+  source_type: string;
+  sheet_name: string | null;
+  row_count: number;
+  column_count: number;
+  columns: DatasetColumn[];
+  preview_rows: Record<string, unknown>[];
+}
+
+export interface DatasetInfo {
+  table_name: string;
+  name: string;
+  source_type: string;
+  row_count: number;
+  column_count: number;
+  columns: DatasetColumn[];
+}
+
+export async function uploadDataset(
+  file: File,
+  sessionId: string
+): Promise<{ datasets: DatasetPreview[]; count: number }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("session_id", sessionId);
+  const res = await api.post("/datasets/upload", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 60000,
+  });
+  return res.data;
+}
+
+export async function listDatasets(
+  sessionId: string
+): Promise<{ datasets: DatasetInfo[]; count: number }> {
+  const res = await api.get(`/datasets?session_id=${sessionId}`);
+  return res.data;
+}
+
+export async function deleteDataset(tableName: string): Promise<void> {
+  await api.delete(`/datasets/${tableName}`);
+}
+
 export default api;

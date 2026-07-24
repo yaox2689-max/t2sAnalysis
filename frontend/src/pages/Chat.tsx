@@ -9,6 +9,8 @@ import {
   RocketOutlined,
   SearchOutlined,
   LineChartOutlined,
+  PaperClipOutlined,
+  CloseCircleOutlined,
 } from "@ant-design/icons";
 import * as echarts from "echarts/core";
 import { BarChart, LineChart, PieChart, ScatterChart } from "echarts/charts";
@@ -37,8 +39,11 @@ import {
   sendChat,
   createSession,
   getSessionMessages,
+  uploadDataset,
+  deleteDataset,
   ChatResponse,
   MessageInfo,
+  DatasetPreview,
 } from "../services/api";
 
 const { TextArea } = Input;
@@ -432,8 +437,11 @@ const Chat: React.FC<ChatProps> = ({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [initLoading, setInitLoading] = useState(true);
+  const [datasets, setDatasets] = useState<DatasetPreview[]>([]);
+  const [uploading, setUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef(input);
   inputRef.current = input;
   const sessionIdRef = useRef(sessionId);
@@ -530,6 +538,68 @@ const Chat: React.FC<ChatProps> = ({
     },
     [handleSend]
   );
+
+  // ── Upload handlers ───────────────────────────────────
+
+  const handleFileUpload = useCallback(
+    async (file: File) => {
+      const sid = sessionIdRef.current;
+      if (!sid || uploading) return;
+
+      setUploading(true);
+      try {
+        const res = await uploadDataset(file, sid);
+        setDatasets((prev) => [...prev, ...res.datasets]);
+        message.success(`已导入 ${res.count} 个数据集`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "上传失败";
+        message.error(msg);
+      } finally {
+        setUploading(false);
+      }
+    },
+    [uploading]
+  );
+
+  const handleRemoveDataset = useCallback(async (tableName: string) => {
+    try {
+      await deleteDataset(tableName);
+      setDatasets((prev) => prev.filter((d) => d.table_name !== tableName));
+    } catch {
+      message.error("删除失败");
+    }
+  }, []);
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleFileUpload(file);
+      e.target.value = "";
+    }
+  };
+
+  // ── Drag-drop ─────────────────────────────────────────
+
+  const [dragging, setDragging] = useState(false);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      handleFileUpload(file);
+    }
+  };
 
   if (initLoading) {
     return (
@@ -639,7 +709,70 @@ const Chat: React.FC<ChatProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="glass-input-area" style={{ padding: "16px 32px 20px" }}>
+      <div
+        className="glass-input-area"
+        style={{ padding: "16px 32px 20px" }}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {/* Dataset tags */}
+        {datasets.length > 0 && (
+          <div
+            style={{
+              maxWidth: 880,
+              margin: "0 auto 8px",
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 6,
+            }}
+          >
+            {datasets.map((ds) => (
+              <span
+                key={ds.table_name}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "2px 8px",
+                  background: "rgba(13, 148, 136, 0.08)",
+                  border: "1px solid rgba(13, 148, 136, 0.2)",
+                  borderRadius: 6,
+                  fontSize: 12,
+                  color: "#0d9488",
+                }}
+              >
+                <DatabaseOutlined style={{ fontSize: 11 }} />
+                {ds.name}
+                <span style={{ color: "#94a3b8" }}>({ds.row_count} rows)</span>
+                <CloseCircleOutlined
+                  style={{ fontSize: 12, cursor: "pointer", color: "#94a3b8" }}
+                  onClick={() => handleRemoveDataset(ds.table_name)}
+                />
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Drag overlay */}
+        {dragging && (
+          <div
+            style={{
+              maxWidth: 880,
+              margin: "0 auto 8px",
+              padding: 20,
+              border: "2px dashed #0d9488",
+              borderRadius: 10,
+              textAlign: "center",
+              color: "#0d9488",
+              fontSize: 14,
+              background: "rgba(13, 148, 136, 0.04)",
+            }}
+          >
+            拖放 Excel/CSV 文件到此处上传
+          </div>
+        )}
+
         <div
           style={{
             display: "flex",
@@ -649,6 +782,20 @@ const Chat: React.FC<ChatProps> = ({
             alignItems: "flex-end",
           }}
         >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            style={{ display: "none" }}
+            onChange={handleFileInputChange}
+          />
+          <Button
+            icon={<PaperClipOutlined />}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={loading || uploading}
+            title="上传 Excel/CSV 文件"
+            style={{ borderRadius: 10 }}
+          />
           <TextArea
             value={input}
             onChange={(e) => setInput(e.target.value)}
