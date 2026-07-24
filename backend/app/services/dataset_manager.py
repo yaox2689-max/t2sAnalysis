@@ -16,6 +16,7 @@ Usage:
 """
 
 import csv
+import json
 import logging
 import os
 import uuid
@@ -50,14 +51,23 @@ class DatasetInfo:
     original_file: str
     file_size_bytes: int
     sheet_name: Optional[str] = None
+    profile_meta: Optional[dict] = None
 
 
 class DatasetManager:
-    """Import and manage user-uploaded datasets in DuckDB."""
+    """Import and manage user-updated datasets in DuckDB."""
 
-    def __init__(self, duckdb_engine: object, mysql_db: object = None) -> None:
+    def __init__(
+        self,
+        duckdb_engine: object,
+        mysql_db: object = None,
+        registry: object = None,
+        profiler: object = None,
+    ) -> None:
         self._engine = duckdb_engine
         self._db = mysql_db
+        self._registry = registry
+        self._profiler = profiler
 
     async def import_file(
         self,
@@ -67,6 +77,7 @@ class DatasetManager:
     ) -> list[DatasetInfo]:
         """Import a file into DuckDB. Auto-detects format.
 
+        Lifecycle: uploading → profile → ready → persist to MySQL.
         Returns a list of DatasetInfo (one per sheet for Excel, one for CSV).
         """
         ext = os.path.splitext(file_path)[1].lower()
@@ -77,11 +88,30 @@ class DatasetManager:
             raise ValueError(f"File too large: {file_size} bytes (max {MAX_FILE_SIZE_BYTES})")
 
         if ext in _EXCEL_EXTENSIONS:
-            return await self._import_excel(file_path, original_name, session_id, file_size)
+            datasets = await self._import_excel(file_path, original_name, session_id, file_size)
         elif ext in _CSV_EXTENSIONS:
-            return [await self._import_csv(file_path, original_name, session_id, file_size)]
+            datasets = [await self._import_csv(file_path, original_name, session_id, file_size)]
         else:
             raise ValueError(f"Unsupported file format: {ext}")
+
+        # Post-import: generate profile, persist to MySQL, register
+        for ds in datasets:
+            ds.status = "uploading"
+            ds.profile_meta = self._generate_profile(ds.table_name)
+            ds.status = "ready"
+
+            await self._persist_to_mysql(ds)
+
+            if self._registry:
+                self._registry.register(
+                    table_name=ds.table_name,
+                    display_name=ds.name,
+                    source_type=ds.source_type,
+                    session_id=ds.session_id,
+                    columns_meta=ds.columns_meta,
+                )
+
+        return datasets
 
     async def _import_excel(
         self,
@@ -145,7 +175,7 @@ class DatasetManager:
                 id=dataset_id,
                 name=f"{original_name} ({sheet_name})" if len(xls.sheet_names) > 1 else original_name,
                 source_type="excel",
-                status="ready",
+                status="uploading",
                 table_name=table_name,
                 session_id=session_id,
                 row_count=len(df),
@@ -215,7 +245,7 @@ class DatasetManager:
             id=dataset_id,
             name=original_name,
             source_type="csv",
-            status="ready",
+            status="uploading",
             table_name=table_name,
             session_id=session_id,
             row_count=row_count,
@@ -236,13 +266,72 @@ class DatasetManager:
         return dataset
 
     async def delete_dataset(self, table_name: str) -> None:
-        """Delete a dataset (DROP TABLE from DuckDB)."""
+        """Delete a dataset: DROP TABLE + unregister + delete from MySQL."""
         self._engine.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+
+        if self._registry:
+            self._registry.unregister(table_name)
+
+        await self._delete_from_mysql(table_name)
         logger.info({"event": "dataset_deleted", "table": table_name})
 
     def list_tables(self) -> list[str]:
         """List all tables in DuckDB."""
         return self._engine.tables()
+
+    # ── MySQL persistence ─────────────────────────────────
+
+    async def _persist_to_mysql(self, ds: "DatasetInfo") -> None:
+        """Persist dataset metadata to MySQL datasets table."""
+        if self._db is None:
+            return
+        try:
+            await self._db.execute(
+                "INSERT INTO datasets "
+                "(id, name, source_type, status, table_name, session_id, "
+                "row_count, column_count, columns_meta, profile_meta, original_file, file_size_bytes) "
+                "VALUES (:id, :name, :source_type, :status, :table_name, :session_id, "
+                ":row_count, :column_count, :columns_meta, :profile_meta, :original_file, :file_size_bytes)",
+                {
+                    "id": ds.id,
+                    "name": ds.name,
+                    "source_type": ds.source_type,
+                    "status": ds.status,
+                    "table_name": ds.table_name,
+                    "session_id": ds.session_id,
+                    "row_count": ds.row_count,
+                    "column_count": ds.column_count,
+                    "columns_meta": json.dumps(ds.columns_meta, ensure_ascii=False),
+                    "profile_meta": json.dumps(ds.profile_meta, ensure_ascii=False) if ds.profile_meta else None,
+                    "original_file": ds.original_file,
+                    "file_size_bytes": ds.file_size_bytes,
+                },
+            )
+            logger.info({"event": "dataset_persisted", "table": ds.table_name})
+        except Exception as exc:
+            logger.error({"event": "dataset_persist_failed", "table": ds.table_name, "error": str(exc)})
+
+    async def _delete_from_mysql(self, table_name: str) -> None:
+        """Mark dataset as deleted in MySQL."""
+        if self._db is None:
+            return
+        try:
+            await self._db.execute(
+                "UPDATE datasets SET status = 'deleted' WHERE table_name = :table",
+                {"table": table_name},
+            )
+        except Exception as exc:
+            logger.error({"event": "dataset_mysql_delete_failed", "table": table_name, "error": str(exc)})
+
+    def _generate_profile(self, table_name: str) -> Optional[dict]:
+        """Generate data profile for a table."""
+        if self._profiler is None:
+            return None
+        try:
+            return self._profiler.profile(table_name)
+        except Exception as exc:
+            logger.warning({"event": "profile_generation_failed", "table": table_name, "error": str(exc)})
+            return None
 
     @staticmethod
     def _pandas_to_sql_type(pd_type: str) -> str:

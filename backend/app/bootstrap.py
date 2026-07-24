@@ -59,45 +59,113 @@ class Bootstrap:
         duckdb_engine.init()
         logger.info({"event": "bootstrap_duckdb_ready"})
 
-        # 2. Import demo data if needed
+        # 2. Init MySQL (business metadata)
+        from app.core.database import db
+        db.init()
+        await self._ensure_datasets_table(db)
+
+        # 3. Import demo data if needed
         self._init_demo_data(duckdb_engine)
 
-        # 3. Init SchemaProfiler
+        # 4. Init SchemaProfiler
         from app.tools.schema_profiler import SchemaProfiler
         self.profiler = SchemaProfiler(duckdb_engine)
 
-        # 4. Init DatasetRegistry + load existing tables
+        # 5. Init DatasetRegistry + load from MySQL
         from app.services.dataset_registry import DatasetRegistry
         self.registry = DatasetRegistry(duckdb_engine, self.profiler)
-        self.registry.load_from_duckdb()
+        await self._load_datasets_from_mysql(db, duckdb_engine)
 
-        # Register demo datasets with display names
-        for table_name, display_name in _DEMO_DATASETS.items():
-            if table_name in duckdb_engine.tables():
-                self.registry.register(
-                    table_name=table_name,
-                    display_name=display_name,
-                    source_type="demo",
-                )
-        logger.info({"event": "registry_ready", "tables": len(self.registry.list_tables())})
-
-        # 5. Init PromptBuilder
+        # 6. Init PromptBuilder
         from app.services.prompt_builder import PromptBuilder
         self.prompt_builder = PromptBuilder()
 
-        # 6. Init DuckDBExecutor
+        # 7. Init DuckDBExecutor
         from app.tools.duckdb_executor import DuckDBExecutor
         self.executor = DuckDBExecutor(duckdb_engine)
 
-        # 7. Init DatasetManager
+        # 8. Init DatasetManager
         from app.services.dataset_manager import DatasetManager
-        self.dataset_manager = DatasetManager(duckdb_engine)
+        self.dataset_manager = DatasetManager(duckdb_engine, db, self.registry, self.profiler)
 
-        # 8. Log final state
+        # 9. Log final state
         tables = duckdb_engine.tables()
         logger.info({"event": "bootstrap_complete", "tables": tables})
 
         self._initialized = True
+
+    async def _ensure_datasets_table(self, db: object) -> None:
+        """Create datasets table in MySQL if it doesn't exist."""
+        sql_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "scripts", "schema_datasets.sql"
+        )
+        if os.path.exists(sql_path):
+            with open(sql_path, "r", encoding="utf-8") as f:
+                ddl = f.read()
+            try:
+                await db.execute(ddl)
+                logger.info({"event": "datasets_table_ready"})
+            except Exception as exc:
+                logger.warning({"event": "datasets_table_exists", "detail": str(exc)[:100]})
+
+    async def _load_datasets_from_mysql(self, db: object, duckdb_engine: object) -> None:
+        """Load dataset metadata from MySQL into the registry."""
+        import json as _json
+
+        try:
+            rows = await db.execute(
+                "SELECT id, name, source_type, status, table_name, session_id, "
+                "row_count, column_count, columns_meta, profile_meta "
+                "FROM datasets WHERE status != 'deleted'"
+            )
+        except Exception:
+            rows = []
+
+        existing_tables = set(duckdb_engine.tables())
+        loaded = 0
+
+        for row in rows:
+            table_name = row["table_name"]
+            # Skip if table no longer exists in DuckDB
+            if table_name not in existing_tables:
+                continue
+
+            columns_meta = row.get("columns_meta")
+            if isinstance(columns_meta, str):
+                try:
+                    columns_meta = _json.loads(columns_meta)
+                except Exception:
+                    columns_meta = []
+
+            self.registry.register(
+                table_name=table_name,
+                display_name=row["name"],
+                source_type=row["source_type"],
+                session_id=row.get("session_id"),
+                columns_meta=columns_meta or [],
+            )
+            loaded += 1
+
+        # Also register any DuckDB tables not in MySQL (e.g. demo data)
+        for table_name in duckdb_engine.tables():
+            if table_name not in self.registry.list_tables():
+                self.registry.register(
+                    table_name=table_name,
+                    display_name=table_name,
+                    source_type="demo",
+                )
+                # Persist demo dataset to MySQL if not exists
+                try:
+                    demo_id = str(uuid.uuid4())
+                    await db.execute(
+                        "INSERT IGNORE INTO datasets (id, name, source_type, status, table_name) "
+                        "VALUES (:id, :name, :source, :status, :table)",
+                        {"id": demo_id, "name": table_name, "source": "demo", "status": "ready", "table": table_name},
+                    )
+                except Exception:
+                    pass
+
+        logger.info({"event": "datasets_loaded_from_mysql", "count": loaded})
 
     def _init_demo_data(self, engine: object) -> None:
         """Import seed CSVs into DuckDB if demo tables don't exist."""

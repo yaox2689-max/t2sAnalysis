@@ -63,22 +63,12 @@ async def upload_dataset(
             content = await file.read()
             f.write(content)
 
-        # Import into DuckDB
+        # Import into DuckDB (handles profiling, MySQL persist, registry)
         datasets = await bootstrap.dataset_manager.import_file(
             temp_path,
             session_id=session_id,
             display_name=file.filename,
         )
-
-        # Register each dataset in the registry
-        for ds in datasets:
-            bootstrap.registry.register(
-                table_name=ds.table_name,
-                display_name=ds.name,
-                source_type=ds.source_type,
-                session_id=ds.session_id,
-                columns_meta=ds.columns_meta,
-            )
 
         # Get preview (first 5 rows)
         previews = []

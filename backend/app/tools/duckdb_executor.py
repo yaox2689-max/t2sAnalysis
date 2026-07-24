@@ -14,6 +14,9 @@ import logging
 import time
 from typing import Optional
 
+import sqlglot
+import sqlglot.expressions as exp
+
 from app.models.query import QueryResult
 
 logger = logging.getLogger("t2s_analysis")
@@ -21,9 +24,32 @@ logger = logging.getLogger("t2s_analysis")
 # Safety limits
 MAX_ROWS = 500
 
+# Blocked write operations
+_WRITE_OPS = frozenset({
+    exp.Insert, exp.Update, exp.Delete,
+    exp.Drop, exp.Alter, exp.Create, exp.Grant,
+})
+
 
 class DuckDBExecutionError(Exception):
     """Raised when SQL execution fails in DuckDB."""
+
+
+class DuckDBWriteBlockedError(DuckDBExecutionError):
+    """Raised when a write operation is attempted on the analytics database."""
+
+
+def _check_write_blocked(sql: str) -> Optional[str]:
+    """Check if SQL contains write operations. Returns warning or None."""
+    try:
+        tree = sqlglot.parse_one(sql)
+    except sqlglot.errors.ParseError:
+        return None  # let execution handle the parse error
+
+    for node in tree.walk():
+        if isinstance(node, tuple(_WRITE_OPS)):
+            return f"WRITE_OPERATION: {node.key.upper()}"
+    return None
 
 
 class DuckDBExecutor:
@@ -36,8 +62,14 @@ class DuckDBExecutor:
     async def execute(self, sql: str) -> QueryResult:
         """Execute SQL and return a QueryResult.
 
+        Raises DuckDBWriteBlockedError on write operations.
         Raises DuckDBExecutionError on any database error.
         """
+        # Safety check: block write operations
+        warning = _check_write_blocked(sql)
+        if warning:
+            raise DuckDBWriteBlockedError(f"Write operation blocked: {warning}")
+
         start = time.perf_counter()
 
         try:
