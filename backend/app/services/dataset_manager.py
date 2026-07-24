@@ -128,7 +128,24 @@ class DatasetManager:
         datasets = []
 
         for sheet_name in xls.sheet_names:
-            df = pd.read_excel(xls, sheet_name=sheet_name)
+            # Auto-detect header row: skip empty rows at the top
+            df_raw = pd.read_excel(xls, sheet_name=sheet_name, header=None, nrows=5)
+            header_row = 0
+            for i in range(min(5, len(df_raw))):
+                row = df_raw.iloc[i]
+                # If row has any non-null, non-numeric values, it's likely the header
+                non_null = row.dropna()
+                if len(non_null) >= 2:
+                    # Check if values look like headers (strings, not all numbers)
+                    str_count = sum(1 for v in non_null if isinstance(v, str))
+                    if str_count >= len(non_null) * 0.5:
+                        header_row = i
+                        break
+
+            df = pd.read_excel(xls, sheet_name=sheet_name, header=header_row)
+
+            # Drop fully empty rows and reset index
+            df = df.dropna(how="all").reset_index(drop=True)
 
             if len(df) > MAX_ROWS:
                 df = df.head(MAX_ROWS)
