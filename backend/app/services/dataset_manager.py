@@ -152,6 +152,24 @@ class DatasetManager:
             # Drop fully empty rows and reset index
             df = df.dropna(how="all").reset_index(drop=True)
 
+            # Drop rows that look like sub-headers (all string values matching column names)
+            if len(df) > 0:
+                first_row = df.iloc[0]
+                if all(isinstance(v, str) for v in first_row.dropna()):
+                    # Check if this row looks like a repeated header
+                    overlap = sum(1 for v in first_row.dropna() if v in str(list(df.columns)))
+                    if overlap >= len(df.columns) * 0.3:
+                        df = df.iloc[1:].reset_index(drop=True)
+
+            # Auto-convert numeric columns (pandas may read them as object due to header issues)
+            for col in df.columns:
+                if df[col].dtype == object:
+                    # Try to convert to numeric
+                    numeric = pd.to_numeric(df[col], errors="coerce")
+                    # If most values converted successfully, use numeric version
+                    if numeric.notna().sum() >= len(df) * 0.5:
+                        df[col] = numeric
+
             if len(df) > MAX_ROWS:
                 df = df.head(MAX_ROWS)
                 logger.warning({
