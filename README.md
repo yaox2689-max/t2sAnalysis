@@ -5,55 +5,54 @@
 **核心理念：一套引擎，一个数据库，万物皆 Dataset。**
 
 ```mermaid
-flowchart TB
-    User["💬 用户提问"]
-    User --> TaskAnalyzer
+flowchart TD
+    User([用户提问])
 
-    subgraph Ingestion["数据接入层"]
-        Upload["📁 文件上传<br/>Excel / CSV"]
-        DatasetManager["Dataset Manager<br/>导入 / 删除 / 归档"]
-        Profiler["Schema Profiler<br/>画像 + 语义类型"]
+    subgraph Ingest[数据接入]
+        Upload[文件上传<br/>Excel / CSV] --> Mgr[DatasetManager<br/>导入 / 删除]
+        Mgr --> Profile[SchemaProfiler<br/>语义类型画像]
     end
 
-    subgraph Catalog["数据目录"]
-        Registry["Dataset Registry<br/>Catalog (唯一入口)"]
-        PromptBuilder["Prompt Builder<br/>Catalog → PromptContext"]
+    subgraph Cat[数据目录]
+        Reg[DatasetRegistry<br/>Catalog]
+        PB[PromptBuilder<br/>Schema + Profile → Prompt]
     end
 
-    subgraph Agent["AI Pipeline"]
-        TaskAnalyzer["Task Analyzer<br/>NLP → TaskPlan"]
-        SQLGenerator["SQL Generator<br/>LLM → SQL"]
-        Validator["Validator<br/>sqlglot AST"]
-        Executor["DuckDB Executor<br/>安全执行"]
-        Reflection["Reflection<br/>分类修复"]
+    subgraph Pipeline[AI Pipeline — LangGraph]
+        TA[Task Analyzer<br/>意图 → TaskPlan]
+        GEN[SQL Generator<br/>LLM → SQL]
+        VAL[Validator<br/>sqlglot AST]
+        EXE[DuckDB Executor<br/>安全执行]
+        REF[Reflection<br/>错误分类 + 重试]
     end
 
-    subgraph Tools["结果处理"]
-        Chart["Chart<br/>规则引擎 → ECharts"]
-        Insight["Insight<br/>LLM 总结"]
+    subgraph Output[结果处理]
+        CHART[Chart Tool<br/>规则引擎 → ECharts]
+        INSIGHT[Insight Tool<br/>LLM 业务总结]
     end
 
-    subgraph Storage["存储层"]
-        DuckDB[("DuckDB<br/>唯一分析数据库")]
-        MySQL[("MySQL<br/>业务元数据")]
+    subgraph Store[存储层]
+        DDB[(DuckDB<br/>分析引擎)]
+        MySQL[(MySQL<br/>业务元数据)]
     end
 
-    Upload --> DatasetManager
-    DatasetManager --> Profiler
-    Profiler --> DuckDB
-    DatasetManager --> Registry
-    Registry --> PromptBuilder
-    PromptBuilder --> SQLGenerator
-    TaskAnalyzer --> Registry
-    SQLGenerator --> Validator
-    Validator -->|通过| Executor
-    Validator -->|失败| Reflection
-    Executor --> DuckDB
-    Executor -->|成功| Chart
-    Executor -->|成功| Insight
-    Executor -->|失败| Reflection
-    Reflection -->|重试| SQLGenerator
-    Registry --> MySQL
+    User --> TA
+    Profile --> DDB
+    Mgr --> Reg
+    Reg --> PB
+    PB --> GEN
+    TA --> GEN
+    GEN --> VAL
+    VAL -->|通过| EXE
+    VAL -->|失败| REF
+    EXE --> DDB
+    EXE -->|成功| CHART
+    EXE -->|成功| INSIGHT
+    EXE -->|失败| REF
+    REF -->|重试| GEN
+    Reg --> MySQL
+    CHART --> Response([SQL + 图表 + 洞察])
+    INSIGHT --> Response
 ```
 
 ## Features
@@ -78,11 +77,10 @@ flowchart TB
 │   Business Database  │        Analytics Engine           │
 │      (MySQL)         │           (DuckDB)                │
 ├──────────────────────┼───────────────────────────────────┤
-│ users                │ orders          (Demo)            │
-│ sessions             │ customers       (Demo)            │
-│ messages             │ products        (Demo)            │
-│ datasets             │ sales_june      (User Upload)     │
-│                      │ finance_q2      (User Upload)     │
+│ users                │ 用户上传的数据集              │
+│ sessions             │ （Excel / CSV → DuckDB）      │
+│ messages             │                               │
+│ datasets             │                               │
 ├──────────────────────┼───────────────────────────────────┤
 │ AI 永远不查询         │ AI 只查询这里                     │
 └──────────────────────┴───────────────────────────────────┘
@@ -94,7 +92,7 @@ flowchart TB
 | **数据目录** | DatasetRegistry | Catalog 管理，AI 的唯一数据入口 |
 | **画像** | SchemaProfiler | 列级统计 + 语义类型推断 |
 | **Prompt** | PromptBuilder | Catalog → PromptContext → Markdown |
-| **初始化** | Bootstrap | 系统启动、Demo 数据导入、组件装配 |
+| **初始化** | Bootstrap | 系统启动、组件装配 |
 | **AI** | Task Analyzer | 理解用户意图 → `TaskPlan` |
 | **AI** | SQL Generator | PromptBuilder 输出 + LLM → SQL |
 | **安全** | Validator | sqlglot AST 校验，阻断写操作 |
@@ -135,10 +133,9 @@ open http://localhost:5173
 
 启动后自动完成：
 1. DuckDB 初始化（`analysis.duckdb`）
-2. Demo 数据导入（Olist 电商数据集，8 张表）
+2. MySQL 业务表创建（sessions / messages / datasets）
 3. DatasetRegistry 加载 Catalog
 4. PromptBuilder 就绪
-5. MySQL 业务表创建（sessions / messages / datasets）
 
 ### 验证
 
@@ -204,7 +201,6 @@ npm run dev
 │   │   └── bootstrap.py         系统启动初始化
 │   ├── prompts/                 Prompt 模板目录
 │   ├── scripts/
-│   │   ├── seed/                Demo CSV 数据
 │   │   ├── schema.sql           Olist DDL
 │   │   └── schema_datasets.sql  datasets 表 DDL
 │   ├── tests/                   测试用例
@@ -334,9 +330,6 @@ A: `.xlsx`、`.xls`、`.csv`。Excel 默认导入所有 Sheet，每个 Sheet 生
 
 **Q: 上传的数据安全吗？**
 A: 文件名 UUID 重命名存储，SQL 经 sqlglot 校验，写操作（INSERT/UPDATE/DELETE/DROP）被阻断。
-
-**Q: Demo 数据和用户数据会混在一起吗？**
-A: 对 AI 来说不会 — 它只看到 Catalog 中的表，不知道数据来源。数据在同一个 DuckDB 中共存。
 
 **Q: 如何添加新的数据源（如 Parquet、API）？**
 A: 在 DatasetManager 中新增 `import_parquet()` 方法，注册到 DatasetRegistry 即可。AI Pipeline 无需修改。
