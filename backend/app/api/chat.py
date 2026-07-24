@@ -32,13 +32,35 @@ class _SafeEncoder(json.JSONEncoder):
             return o.isoformat()
         return super().default(o)
 
+    def encode(self, o: object) -> str:
+        return super().encode(self._sanitise(o))
+
+    def _sanitise(self, o: object) -> object:
+        """Recursively replace NaN / Inf with None (null in JSON)."""
+        if isinstance(o, float):
+            if o != o or o == float("inf") or o == float("-inf"):
+                return None
+            return o
+        if isinstance(o, dict):
+            return {k: self._sanitise(v) for k, v in o.items()}
+        if isinstance(o, list):
+            return [self._sanitise(v) for v in o]
+        return o
+
 
 def _convert_decimals(rows: list[dict]) -> list[dict]:
-    """Convert Decimal values to float in a list of row dicts."""
-    return [
-        {k: float(v) if isinstance(v, Decimal) else v for k, v in row.items()}
-        for row in rows
-    ]
+    """Convert Decimal values to float and NaN/Inf to None in a list of row dicts."""
+    result = []
+    for row in rows:
+        clean = {}
+        for k, v in row.items():
+            if isinstance(v, Decimal):
+                v = float(v)
+            if isinstance(v, float) and (v != v or v == float("inf") or v == float("-inf")):
+                v = None
+            clean[k] = v
+        result.append(clean)
+    return result
 
 
 def _get_db() -> Database:
@@ -196,6 +218,15 @@ async def chat(request: ChatRequest) -> ChatResponse:
     query_result = state.get("query_result")
     columns = query_result.columns if query_result else []
     rows = query_result.rows if query_result else []
+
+    logger.info({
+        "event": "workflow_result",
+        "has_sql": bool(sql),
+        "has_result": query_result is not None,
+        "columns": columns,
+        "row_count": len(rows),
+        "errors": state.get("errors", []),
+    })
 
     if not rows and not sql:
         # Still save the user message even if no data

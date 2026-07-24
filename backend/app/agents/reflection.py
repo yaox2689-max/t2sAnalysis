@@ -262,7 +262,7 @@ class ReflectionLoop:
         new_context = await self._schema_retriever.retrieve(  # type: ignore[union-attr]
             question, top_k_tables=5, top_k_columns=10,
         )
-        return await self._sql_generator.generate(task_plan, new_context)  # type: ignore[union-attr]
+        return await self._sql_generator.generate(task_plan, new_context, question=question)  # type: ignore[union-attr]
 
     async def _handle_syntax_error(
         self,
@@ -292,7 +292,7 @@ class ReflectionLoop:
         schema_context: SchemaContext,
     ) -> GeneratedSQL:
         """Re-generate SQL with more explicit context instructions."""
-        return await self._sql_generator.generate(task_plan, schema_context)  # type: ignore[union-attr]
+        return await self._sql_generator.generate(task_plan, schema_context, question=question)  # type: ignore[union-attr]
 
     @staticmethod
     def _parse_fix(raw: str) -> GeneratedSQL:

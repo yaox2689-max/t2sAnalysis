@@ -9,10 +9,14 @@ No business logic lives here — every node delegates entirely to
 a dedicated Repository, Service, Tool, or Agent module.
 """
 
+import logging
+
 from app.agents.state import AgentState
 from app.models.query import QueryResult
 from app.models.task import GeneratedSQL, SchemaContext, TaskPlan
 from app.tools.sql_validator import ValidationResult
+
+logger = logging.getLogger("t2s_analysis")
 
 
 def _first_error(state: AgentState) -> str:
@@ -81,9 +85,12 @@ async def generate_sql_node(
     plan = state["task_plan"]
     ctx = state["schema_context"]
     prompt_text = state.get("prompt_text")
+    question = state.get("question", "")
+    logger.info({"event": "generate_sql_start", "question": question[:100], "tables": ctx.tables if ctx else []})
     result: GeneratedSQL = await generator.generate(  # type: ignore[union-attr]
-        plan, ctx, prompt_text=prompt_text,
+        plan, ctx, prompt_text=prompt_text, question=question,
     )
+    logger.info({"event": "generate_sql_done", "sql": result.sql[:200], "valid": result.valid})
     return {
         "generated_sql": result,
         "current_sql": result.sql,
@@ -117,10 +124,17 @@ async def execute_sql_node(
     On error, appends the error message to ``errors``.
     """
     sql = state.get("current_sql") or ""
+    logger.info({"event": "execute_sql_start", "sql": sql[:200]})
     try:
         result: QueryResult = await executor.execute(sql)  # type: ignore[union-attr]
+        logger.info({
+            "event": "execute_sql_success",
+            "columns": result.columns,
+            "row_count": result.row_count,
+        })
         return {"query_result": result}
     except Exception as exc:
+        logger.error({"event": "execute_sql_error", "sql": sql[:200], "error": str(exc)})
         return {
             "query_result": None,
             "errors": (state.get("errors") or []) + [str(exc)],

@@ -11,6 +11,7 @@ Usage:
 """
 
 import logging
+import re
 import time
 from typing import Optional
 
@@ -70,6 +71,10 @@ class DuckDBExecutor:
         if warning:
             raise DuckDBWriteBlockedError(f"Write operation blocked: {warning}")
 
+        # Normalize: convert backtick-quoted identifiers to double-quote
+        # DuckDB handles double-quoted Unicode identifiers more reliably
+        sql = re.sub(r'`([^`]+)`', r'"\1"', sql)
+
         start = time.perf_counter()
 
         try:
@@ -83,6 +88,13 @@ class DuckDBExecutor:
 
         columns = list(df.columns)
         rows = df.to_dict("records")
+
+        # Clean NaN / Inf values → None (JSON-safe)
+        rows = [
+            {k: (None if isinstance(v, float) and (v != v or v == float("inf") or v == float("-inf")) else v)
+             for k, v in row.items()}
+            for row in rows
+        ]
         truncated = False
 
         if len(rows) > self.max_rows:

@@ -71,9 +71,9 @@ _NUMERIC_KEYWORDS = frozenset({
     "count", "quantity", "sum", "avg", "average", "rate",
     "score", "value", "weight", "height", "length", "width",
     "cost", "profit", "discount", "tax", "fee",
-    "payment_value", "price", "freight_value",
+    "payment_value", "freight_value",
     "销售额", "销量", "金额", "数量", "总价", "收入",
-    "成本", "利润", "价格", "单价", "总额", "总量",
+    "成本", "利润", "均价", "单价", "总额", "总量",
     "占比", "比率", "评分", "得分",
 })
 
@@ -175,7 +175,7 @@ def detect_chart_type(
     if classes["category"] and classes["numeric"]:
         num_count = len(classes["numeric"])
         cat_count = len(classes["category"])
-        if cat_count == 1 and num_count == 1 and len(rows) <= 8:
+        if cat_count == 1 and num_count == 1 and len(rows) <= 5:
             return "pie"
         return "bar"
 

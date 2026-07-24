@@ -113,7 +113,7 @@ class FakeGenerator:
         self._result = result
 
     async def generate(
-        self, task_plan: TaskPlan, schema_context: SchemaContext
+        self, task_plan: TaskPlan, schema_context: SchemaContext, **kwargs
     ) -> GeneratedSQL:
         return self._result
 

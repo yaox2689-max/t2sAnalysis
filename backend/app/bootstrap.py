@@ -63,9 +63,10 @@ class Bootstrap:
         from app.core.database import db
         db.init()
         await self._ensure_datasets_table(db)
+        await self._ensure_chat_tables(db)
 
-        # 3. Import demo data if needed
-        self._init_demo_data(duckdb_engine)
+        # 3. Demo data disabled — user only wants to analyze uploaded files
+        # self._init_demo_data(duckdb_engine)
 
         # 4. Init SchemaProfiler
         from app.tools.schema_profiler import SchemaProfiler
@@ -108,6 +109,40 @@ class Bootstrap:
             except Exception as exc:
                 logger.warning({"event": "datasets_table_exists", "detail": str(exc)[:100]})
 
+    async def _ensure_chat_tables(self, db: object) -> None:
+        """Create sessions and messages tables in MySQL if they don't exist."""
+        sessions_ddl = (
+            "CREATE TABLE IF NOT EXISTS sessions ("
+            "  id VARCHAR(64) PRIMARY KEY,"
+            "  title VARCHAR(255) NOT NULL DEFAULT '新对话',"
+            "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
+            "  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+            ")"
+        )
+        messages_ddl = (
+            "CREATE TABLE IF NOT EXISTS messages ("
+            "  id INT AUTO_INCREMENT PRIMARY KEY,"
+            "  session_id VARCHAR(64) NOT NULL,"
+            "  role VARCHAR(16) NOT NULL,"
+            "  content TEXT,"
+            "  sql_text TEXT,"
+            "  chart_type VARCHAR(32),"
+            "  echarts_option JSON,"
+            "  insight TEXT,"
+            "  `columns` JSON,"
+            "  rows_data JSON,"
+            "  elapsed_ms FLOAT DEFAULT 0,"
+            "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
+            "  INDEX idx_messages_session (session_id)"
+            ")"
+        )
+        try:
+            await db.execute(sessions_ddl)
+            await db.execute(messages_ddl)
+            logger.info({"event": "chat_tables_ready"})
+        except Exception as exc:
+            logger.warning({"event": "chat_tables_exists", "detail": str(exc)[:100]})
+
     async def _load_datasets_from_mysql(self, db: object, duckdb_engine: object) -> None:
         """Load dataset metadata from MySQL into the registry."""
         import json as _json
@@ -130,6 +165,10 @@ class Bootstrap:
             if table_name not in existing_tables:
                 continue
 
+            # Skip demo data — only load user-uploaded datasets
+            if row["source_type"] == "demo":
+                continue
+
             columns_meta = row.get("columns_meta")
             if isinstance(columns_meta, str):
                 try:
@@ -146,24 +185,10 @@ class Bootstrap:
             )
             loaded += 1
 
-        # Also register any DuckDB tables not in MySQL (e.g. demo data)
-        for table_name in duckdb_engine.tables():
-            if table_name not in self.registry.list_tables():
-                self.registry.register(
-                    table_name=table_name,
-                    display_name=table_name,
-                    source_type="demo",
-                )
-                # Persist demo dataset to MySQL if not exists
-                try:
-                    demo_id = str(uuid.uuid4())
-                    await db.execute(
-                        "INSERT IGNORE INTO datasets (id, name, source_type, status, table_name) "
-                        "VALUES (:id, :name, :source, :status, :table)",
-                        {"id": demo_id, "name": table_name, "source": "demo", "status": "ready", "table": table_name},
-                    )
-                except Exception:
-                    pass
+        # Demo auto-registration disabled — only user-uploaded data is visible
+        # for table_name in duckdb_engine.tables():
+        #     if table_name not in self.registry.list_tables():
+        #         ...
 
         logger.info({"event": "datasets_loaded_from_mysql", "count": loaded})
 

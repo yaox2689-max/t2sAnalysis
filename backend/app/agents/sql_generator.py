@@ -91,6 +91,7 @@ class SQLGenerator:
         task_plan: TaskPlan,
         schema_context: SchemaContext,
         prompt_text: Optional[str] = None,
+        question: Optional[str] = None,
     ) -> GeneratedSQL:
         """Generate a SQL statement from a structured task plan.
 
@@ -99,6 +100,7 @@ class SQLGenerator:
             schema_context: Schema info for validation.
             prompt_text: Pre-built prompt from PromptBuilder (new path).
                 If None, falls back to legacy _build_schema_text.
+            question: The user's original question (for context).
         """
         if prompt_text:
             schema_text = ""  # prompt_text already includes schema
@@ -115,6 +117,9 @@ class SQLGenerator:
             f"Time Range: {task_plan.time_range}\n\n"
             f"Today's date is {datetime.now().strftime('%Y-%m-%d')}.\n\n"
         )
+
+        if question:
+            user_prompt += f"## User's Original Question\n\n{question}\n\n"
 
         if schema_text:
             user_prompt += f"## Schema Context\n\n{schema_text}"

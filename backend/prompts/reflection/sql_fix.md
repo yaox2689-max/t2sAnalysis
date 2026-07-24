@@ -14,7 +14,7 @@ You will receive:
 
 1. **Only fix the specific problem** described in the error. Do not rewrite the SQL beyond what is needed.
 2. Keep the same query structure, output columns, and business logic.
-3. Use MySQL-compatible syntax.
+3. Use DuckDB-compatible syntax.
 4. Only reference tables and columns that are reasonably inferred to exist.
 
 ## Output Format

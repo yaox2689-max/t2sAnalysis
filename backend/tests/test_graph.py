@@ -61,7 +61,7 @@ class FakeRetriever:
 
 
 class FakeGenerator:
-    async def generate(self, plan, schema, prompt_text=None):
+    async def generate(self, plan, schema, prompt_text=None, question=None):
         return SAMPLE_SQL
 
 
