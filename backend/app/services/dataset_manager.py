@@ -266,14 +266,22 @@ class DatasetManager:
         return dataset
 
     async def delete_dataset(self, table_name: str) -> None:
-        """Delete a dataset: DROP TABLE + unregister + delete from MySQL."""
+        """Delete a dataset: DROP TABLE + unregister + mark deleted in MySQL."""
         self._engine.execute(f'DROP TABLE IF EXISTS "{table_name}"')
 
         if self._registry:
             self._registry.unregister(table_name)
 
-        await self._delete_from_mysql(table_name)
+        await self._update_status_mysql(table_name, "deleted")
         logger.info({"event": "dataset_deleted", "table": table_name})
+
+    async def archive_dataset(self, table_name: str) -> None:
+        """Archive a dataset: hide from catalog but keep DuckDB table."""
+        if self._registry:
+            self._registry.unregister(table_name)
+
+        await self._update_status_mysql(table_name, "archived")
+        logger.info({"event": "dataset_archived", "table": table_name})
 
     def list_tables(self) -> list[str]:
         """List all tables in DuckDB."""
@@ -311,17 +319,17 @@ class DatasetManager:
         except Exception as exc:
             logger.error({"event": "dataset_persist_failed", "table": ds.table_name, "error": str(exc)})
 
-    async def _delete_from_mysql(self, table_name: str) -> None:
-        """Mark dataset as deleted in MySQL."""
+    async def _update_status_mysql(self, table_name: str, status: str) -> None:
+        """Update dataset status in MySQL."""
         if self._db is None:
             return
         try:
             await self._db.execute(
-                "UPDATE datasets SET status = 'deleted' WHERE table_name = :table",
-                {"table": table_name},
+                "UPDATE datasets SET status = :status WHERE table_name = :table",
+                {"status": status, "table": table_name},
             )
         except Exception as exc:
-            logger.error({"event": "dataset_mysql_delete_failed", "table": table_name, "error": str(exc)})
+            logger.error({"event": "dataset_status_update_failed", "table": table_name, "error": str(exc)})
 
     def _generate_profile(self, table_name: str) -> Optional[dict]:
         """Generate data profile for a table."""

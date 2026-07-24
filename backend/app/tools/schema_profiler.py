@@ -78,18 +78,26 @@ class SchemaProfiler:
 
         # 3. Profile each column
         columns = []
+        date_range = None
         for col_info in desc:
             col_name = col_info[0]
             col_type = col_info[1].upper() if col_info[1] else "VARCHAR"
             col_profile = self._profile_column(table_name, col_name, col_type, row_count)
             columns.append(col_profile)
 
-        return {
+            # Capture date range from first time column
+            if date_range is None and col_profile["semantic_type"] == TIME and col_profile["min"]:
+                date_range = {"column": col_name, "min": col_profile["min"], "max": col_profile["max"]}
+
+        result = {
             "table": table_name,
             "row_count": row_count,
             "column_count": len(columns),
             "columns": columns,
         }
+        if date_range:
+            result["date_range"] = date_range
+        return result
 
     def _profile_column(
         self, table: str, col_name: str, col_type: str, row_count: int

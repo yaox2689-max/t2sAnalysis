@@ -116,7 +116,7 @@ class Bootstrap:
             rows = await db.execute(
                 "SELECT id, name, source_type, status, table_name, session_id, "
                 "row_count, column_count, columns_meta, profile_meta "
-                "FROM datasets WHERE status != 'deleted'"
+                "FROM datasets WHERE status = 'ready'"
             )
         except Exception:
             rows = []
