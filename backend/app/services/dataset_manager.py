@@ -1,0 +1,261 @@
+"""DatasetManager — import Excel/CSV into DuckDB.
+
+Handles the lifecycle of user-uploaded datasets:
+- Excel (.xlsx/.xls) → pandas DataFrame → DuckDB table
+- CSV → DuckDB read_csv (direct, no pandas)
+- Delete dataset (DROP TABLE)
+- List datasets
+
+Usage:
+    from app.services.dataset_manager import DatasetManager
+
+    manager = DatasetManager(duckdb_engine, mysql_db)
+    dataset = await manager.import_file("sales.xlsx", session_id="ses_abc")
+    datasets = await manager.list_datasets("ses_abc")
+    await manager.delete_dataset(dataset.id)
+"""
+
+import csv
+import logging
+import os
+import uuid
+from dataclasses import dataclass, field
+from typing import Optional
+
+from app.tools.column_cleaner import clean_column_names, generate_table_name
+
+logger = logging.getLogger("t2s_analysis")
+
+# Limits
+MAX_ROWS = 100_000
+MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10MB
+
+# Supported formats
+_EXCEL_EXTENSIONS = {".xlsx", ".xls"}
+_CSV_EXTENSIONS = {".csv"}
+
+
+@dataclass
+class DatasetInfo:
+    """Metadata for an imported dataset."""
+    id: str
+    name: str
+    source_type: str          # "excel" | "csv"
+    status: str               # "uploading" | "ready" | "deleted"
+    table_name: str           # DuckDB table name
+    session_id: str
+    row_count: int
+    column_count: int
+    columns_meta: list[dict]  # [{"name": "col1", "original_name": "原始名", "type": "VARCHAR"}, ...]
+    original_file: str
+    file_size_bytes: int
+    sheet_name: Optional[str] = None
+
+
+class DatasetManager:
+    """Import and manage user-uploaded datasets in DuckDB."""
+
+    def __init__(self, duckdb_engine: object, mysql_db: object = None) -> None:
+        self._engine = duckdb_engine
+        self._db = mysql_db
+
+    async def import_file(
+        self,
+        file_path: str,
+        session_id: str,
+        display_name: Optional[str] = None,
+    ) -> list[DatasetInfo]:
+        """Import a file into DuckDB. Auto-detects format.
+
+        Returns a list of DatasetInfo (one per sheet for Excel, one for CSV).
+        """
+        ext = os.path.splitext(file_path)[1].lower()
+        original_name = display_name or os.path.basename(file_path)
+        file_size = os.path.getsize(file_path)
+
+        if file_size > MAX_FILE_SIZE_BYTES:
+            raise ValueError(f"File too large: {file_size} bytes (max {MAX_FILE_SIZE_BYTES})")
+
+        if ext in _EXCEL_EXTENSIONS:
+            return await self._import_excel(file_path, original_name, session_id, file_size)
+        elif ext in _CSV_EXTENSIONS:
+            return [await self._import_csv(file_path, original_name, session_id, file_size)]
+        else:
+            raise ValueError(f"Unsupported file format: {ext}")
+
+    async def _import_excel(
+        self,
+        file_path: str,
+        original_name: str,
+        session_id: str,
+        file_size: int,
+    ) -> list[DatasetInfo]:
+        """Import Excel file (all sheets) into DuckDB."""
+        import pandas as pd
+
+        # Read all sheets
+        xls = pd.ExcelFile(file_path)
+        datasets = []
+
+        for sheet_name in xls.sheet_names:
+            df = pd.read_excel(xls, sheet_name=sheet_name)
+
+            if len(df) > MAX_ROWS:
+                df = df.head(MAX_ROWS)
+                logger.warning({
+                    "event": "dataset_truncated",
+                    "sheet": sheet_name,
+                    "max_rows": MAX_ROWS,
+                })
+
+            if df.empty:
+                logger.warning({"event": "empty_sheet", "sheet": sheet_name})
+                continue
+
+            # Clean column names
+            original_columns = list(df.columns)
+            cleaned_columns = clean_column_names(original_columns)
+            df.columns = cleaned_columns
+
+            # Generate table name
+            table_name = generate_table_name(original_name, sheet_name)
+            dataset_id = str(uuid.uuid4())
+
+            # Import into DuckDB — register DataFrame first
+            self._engine.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+            self._engine.conn.register("_tmp_df", df)
+            self._engine.execute(
+                f'CREATE TABLE "{table_name}" AS SELECT * FROM _tmp_df'
+            )
+            self._engine.conn.unregister("_tmp_df")
+
+            # Build column metadata
+            columns_meta = []
+            for i, (cleaned, original) in enumerate(zip(cleaned_columns, original_columns)):
+                col_type = str(df[cleaned].dtype)
+                # Map pandas dtype to SQL type
+                sql_type = self._pandas_to_sql_type(col_type)
+                columns_meta.append({
+                    "name": cleaned,
+                    "original_name": str(original),
+                    "type": sql_type,
+                })
+
+            dataset = DatasetInfo(
+                id=dataset_id,
+                name=f"{original_name} ({sheet_name})" if len(xls.sheet_names) > 1 else original_name,
+                source_type="excel",
+                status="ready",
+                table_name=table_name,
+                session_id=session_id,
+                row_count=len(df),
+                column_count=len(cleaned_columns),
+                columns_meta=columns_meta,
+                original_file=original_name,
+                file_size_bytes=file_size,
+                sheet_name=sheet_name,
+            )
+            datasets.append(dataset)
+
+            logger.info({
+                "event": "dataset_imported",
+                "table": table_name,
+                "rows": len(df),
+                "columns": len(cleaned_columns),
+                "source": "excel",
+            })
+
+        xls.close()
+        return datasets
+
+    async def _import_csv(
+        self,
+        file_path: str,
+        original_name: str,
+        session_id: str,
+        file_size: int,
+    ) -> DatasetInfo:
+        """Import CSV file into DuckDB (direct read, no pandas)."""
+        # Generate table name
+        table_name = generate_table_name(original_name)
+        dataset_id = str(uuid.uuid4())
+
+        # Import directly with DuckDB
+        self._engine.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+        self._engine.execute(
+            f"CREATE TABLE \"{table_name}\" AS SELECT * FROM read_csv('{file_path}', header=true, auto_detect=true)"
+        )
+
+        # Get column info from DuckDB
+        desc = self._engine.execute(f'DESCRIBE "{table_name}"').fetchall()
+        columns_meta = []
+        for row in desc:
+            col_name = row[0]
+            col_type = row[1]
+            columns_meta.append({
+                "name": col_name,
+                "original_name": col_name,
+                "type": col_type,
+            })
+
+        # Get row count
+        count_result = self._engine.execute(f'SELECT COUNT(*) FROM "{table_name}"').fetchone()
+        row_count = count_result[0] if count_result else 0
+
+        # Truncate if needed (CSV can be large)
+        if row_count > MAX_ROWS:
+            self._engine.execute(
+                f'CREATE OR REPLACE TABLE "{table_name}" AS '
+                f'SELECT * FROM "{table_name}" LIMIT {MAX_ROWS}'
+            )
+            row_count = MAX_ROWS
+            logger.warning({"event": "dataset_truncated", "table": table_name, "max_rows": MAX_ROWS})
+
+        dataset = DatasetInfo(
+            id=dataset_id,
+            name=original_name,
+            source_type="csv",
+            status="ready",
+            table_name=table_name,
+            session_id=session_id,
+            row_count=row_count,
+            column_count=len(columns_meta),
+            columns_meta=columns_meta,
+            original_file=original_name,
+            file_size_bytes=file_size,
+        )
+
+        logger.info({
+            "event": "dataset_imported",
+            "table": table_name,
+            "rows": row_count,
+            "columns": len(columns_meta),
+            "source": "csv",
+        })
+
+        return dataset
+
+    async def delete_dataset(self, table_name: str) -> None:
+        """Delete a dataset (DROP TABLE from DuckDB)."""
+        self._engine.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+        logger.info({"event": "dataset_deleted", "table": table_name})
+
+    def list_tables(self) -> list[str]:
+        """List all tables in DuckDB."""
+        return self._engine.tables()
+
+    @staticmethod
+    def _pandas_to_sql_type(pd_type: str) -> str:
+        """Map pandas dtype string to SQL type name."""
+        pd_type = pd_type.lower()
+        if "int" in pd_type:
+            return "BIGINT"
+        if "float" in pd_type or "double" in pd_type:
+            return "DOUBLE"
+        if "datetime" in pd_type or "timestamp" in pd_type:
+            return "TIMESTAMP"
+        if "date" in pd_type:
+            return "DATE"
+        if "bool" in pd_type:
+            return "BOOLEAN"
+        return "VARCHAR"
