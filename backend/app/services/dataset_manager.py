@@ -128,19 +128,24 @@ class DatasetManager:
         datasets = []
 
         for sheet_name in xls.sheet_names:
-            # Auto-detect header row: skip empty rows at the top
-            df_raw = pd.read_excel(xls, sheet_name=sheet_name, header=None, nrows=5)
+            # Auto-detect header row: skip empty/title rows at the top
+            df_raw = pd.read_excel(xls, sheet_name=sheet_name, header=None, nrows=10)
             header_row = 0
-            for i in range(min(5, len(df_raw))):
+
+            for i in range(min(10, len(df_raw))):
                 row = df_raw.iloc[i]
-                # If row has any non-null, non-numeric values, it's likely the header
-                non_null = row.dropna()
-                if len(non_null) >= 2:
-                    # Check if values look like headers (strings, not all numbers)
-                    str_count = sum(1 for v in non_null if isinstance(v, str))
-                    if str_count >= len(non_null) * 0.5:
-                        header_row = i
-                        break
+                non_null = [v for v in row if pd.notna(v)]
+
+                if len(non_null) < 2:
+                    continue  # Too few values, skip
+
+                # Count string values (headers are mostly text)
+                str_count = sum(1 for v in non_null if isinstance(v, str))
+
+                # If most non-null values are strings, this is the header row
+                if str_count >= max(2, len(non_null) * 0.4):
+                    header_row = i
+                    break
 
             df = pd.read_excel(xls, sheet_name=sheet_name, header=header_row)
 
