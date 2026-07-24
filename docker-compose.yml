@@ -4,12 +4,14 @@ services:
     container_name: t2s-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-root123}
-      MYSQL_DATABASE: ${DB_NAME:-t2s_analysis}
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: t2s_analysis
     ports:
-      - "${DB_PORT:-3306}:3306"
+      - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./backend/scripts/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./backend/scripts/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
@@ -21,7 +23,7 @@ services:
     container_name: t2s-redis
     restart: unless-stopped
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -33,19 +35,28 @@ services:
       context: ./backend
     container_name: t2s-backend
     restart: unless-stopped
-    env_file:
-      - ./backend/.env
     environment:
+      APP_NAME: AI Data Analyst
+      APP_VERSION: "0.1.0"
+      DEBUG: "false"
+      HOST: "0.0.0.0"
+      PORT: "8000"
+      CORS_ORIGINS: '["http://localhost:5173","http://localhost:80"]'
       DB_HOST: mysql
-      DB_PORT: 3306
+      DB_PORT: "3306"
       DB_USER: root
-      DB_PASSWORD: ${DB_PASSWORD:-root123}
-      DB_NAME: ${DB_NAME:-t2s_analysis}
+      DB_PASSWORD: root123
+      DB_NAME: t2s_analysis
       REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_DB: 0
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com}
+      SQL_TIMEOUT: "10"
+      SQL_MAX_ROWS: "500"
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "8000:8000"
     depends_on:
       mysql:
         condition: service_healthy
