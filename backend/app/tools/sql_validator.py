@@ -17,6 +17,8 @@ Usage:
     assert result.passed is True
 """
 
+from typing import Optional
+
 import sqlglot
 import sqlglot.expressions as exp
 from sqlglot import parse_one

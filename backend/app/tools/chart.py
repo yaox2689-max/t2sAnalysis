@@ -55,6 +55,7 @@ _CATEGORY_KEYWORDS = frozenset({
     "city", "state", "country", "region", "group",
     "product_category", "product_name", "customer_city",
     "payment_type", "review_score",
+    "_id",
 })
 
 _NUMERIC_TYPES = frozenset({
@@ -120,6 +121,13 @@ def _classify_columns(columns: list[dict]) -> dict:
     # Fallback: if nothing was classified, treat leftmost as category
     if not time_cols and not cat_cols and not num_cols and columns:
         cat_cols.append(_field_name(columns[0]))
+
+    # Fallback: unclassified non-numeric columns → treat as category
+    classified = set(time_cols) | set(cat_cols) | set(num_cols)
+    for col in columns:
+        name = _field_name(col)
+        if name not in classified and not _is_numeric(col):
+            cat_cols.append(name)
 
     return {"time": time_cols, "category": cat_cols, "numeric": num_cols}
 
