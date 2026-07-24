@@ -1,14 +1,20 @@
-# AI Data Analyst
+# Dataset Intelligence Platform
 
 **Natural Language → Dataset → SQL → Insight**
 
-不同于传统 Text-to-SQL，AI 不直接面对数据库表，而是通过 Dataset Registry 获取经过画像和治理的数据上下文。所有推理发生在受控的数据语义层之上。
+AI doesn't query databases directly.
+It reasons over Dataset Registry, where schema, semantics and metadata are already understood.
 
-## Why
+## Why Dataset Intelligence?
 
-- **一个抽象** — Excel、CSV、未来任何数据源，统一为 Dataset
-- **一个引擎** — 所有查询走 DuckDB，AI 无需区分数据来源
-- **一个入口** — Dataset Registry 是 AI 唯一的数据访问层
+**一个抽象 — Dataset**
+所有数据源进入系统后统一成为 Dataset。Excel、CSV、数据库、API — AI 不需要学习不同数据源格式。
+
+**一个认知层 — Dataset Registry**
+Registry 不只是目录。它包含 Schema、语义类型、统计信息和示例数据，构成 AI 理解数据的完整上下文。
+
+**一个执行引擎 — DuckDB**
+所有分析查询统一执行，AI 无需区分数据来源。
 
 ## Architecture
 
@@ -17,37 +23,39 @@
                              │
                              ▼
  ┌─────────────────────────────────────────────────────┐
- │              AI Analytics Agent                      │
+ │              AI Reasoning Layer                      │
  │                                                     │
- │   任务理解 → SQL 生成 → 安全校验 → 自动修复          │
+ │   任务理解 → SQL 规划 → 安全校验 → 自动修复          │
  │                                                     │
- └────────────────────────┬────────────────────────────┘
+ └────────────────────────▲────────────────────────────┘
                           │
-                          ▼
+                          │  AI 的认知边界
+                          │
  ┌─────────────────────────────────────────────────────┐
- │           Dataset Intelligence Layer                 │
+ │          Dataset Intelligence Layer                  │
  │                                                     │
  │   Dataset Registry — 统一数据目录                    │
- │   Schema 理解 — 列级画像 + 语义类型                  │
- │   上下文检索 — 按需构建 AI 可理解的 Schema            │
+ │   Semantic Schema — 列级画像 + 语义类型              │
+ │   Data Profile — 统计信息 + 示例值                   │
+ │   Context Retrieval — 按需构建数据上下文             │
  │                                                     │
- └────────────────────────┬────────────────────────────┘
+ │   ←—— AI 的语义数据视图 ——→                          │
+ │                                                     │
+ └────────────────────────▲────────────────────────────┘
                           │
-                          ▼
  ┌─────────────────────────────────────────────────────┐
- │           Unified Analytics Engine                   │
+ │          Unified Analytics Engine                    │
  │                                                     │
  │                   DuckDB                             │
  │                                                     │
- │   Excel / CSV / 未来数据源 → Dataset → 查询 → 结果   │
+ │   执行 Dataset 查询，返回结果                        │
  │                                                     │
- └────────────────────────┬────────────────────────────┘
+ └────────────────────────▲────────────────────────────┘
                           │
-                          ▼
  ┌─────────────────────────────────────────────────────┐
- │                  分析输出                             │
+ │               Dataset Sources                       │
  │                                                     │
- │   自动可视化  |  业务洞察  |  SQL + 数据表             │
+ │   Excel  |  CSV  |  Database  |  API  |  Future     │
  │                                                     │
  └─────────────────────────────────────────────────────┘
 
@@ -61,13 +69,32 @@
                       └─────────────┘
 ```
 
+## Dataset Lifecycle
+
+```
+   Upload ──→ Import ──→ Profile ──→ Register ──→ Understand ──→ Query ──→ Insight
+                                                                         │
+                                                                         ▼
+                                                              Dataset = Living Data Asset
+```
+
+| 阶段 | 说明 |
+|------|------|
+| **Upload** | 用户上传 Excel / CSV |
+| **Import** | 列名清洗、类型推断、写入 DuckDB |
+| **Profile** | 列级统计 + 语义类型（dimension / measure / time） |
+| **Register** | 注册到 Dataset Registry，AI 可见 |
+| **Understand** | AI 通过 Registry 获取 Schema + 画像 + 示例值 |
+| **Query** | AI 生成 SQL，安全执行 |
+| **Insight** | 自动可视化 + 业务洞察 |
+
 ## Core Capabilities
 
 | 能力 | 说明 |
 |------|------|
 | Dataset 抽象 | Excel / CSV 统一为 Dataset，一个引擎处理所有数据 |
 | 语义画像 | 自动推断列级语义类型（dimension / measure / time） |
-| Agent 推理 | LangGraph 编排：意图分析 → SQL 生成 → 校验 → 执行 → 自修复 |
+| Dataset-aware Agent | LangGraph 编排：意图分析 → SQL 生成 → 校验 → 执行 → 自修复 |
 | 安全执行 | 写操作阻断 + 超时保护 + 最多 3 次结构化重试 |
 | 自动可视化 | 规则引擎自动选图（Line / Bar / Pie / Scatter / Histogram） |
 | 业务洞察 | LLM 总结查询结果，输出可读的业务结论 |
@@ -75,16 +102,13 @@
 
 ## How It Works
 
-### 数据接入流程
+### 数据接入
 
 ```
 Excel / CSV 上传
        │
        ▼
  Dataset Manager — 导入 / 清洗 / 注册
-       │
-       ├── 列名清洗（中文 / 空名 / 特殊字符）
-       ├── 表名生成（可读名 + UUID 后缀）
        │
        ▼
  Schema Profiler — 列级统计 + 语义类型推断
@@ -96,7 +120,7 @@ Excel / CSV 上传
  DuckDB + MySQL 元数据
 ```
 
-### 查询分析流程
+### 查询分析
 
 ```
 用户提问
@@ -108,10 +132,10 @@ Excel / CSV 上传
  Dataset Registry — 检索相关数据集（top-k）
        │
        ▼
- 上下文构建 — Schema + 画像 + 示例值 → AI 可理解的 Prompt
+ Context Builder — Schema + 画像 + 示例值 → Dataset Context
        │
        ▼
- SQL Generator — LLM 生成 SQL
+ SQL Generator — LLM 基于 Dataset Context 生成 SQL
        │
        ▼
  安全校验 — 语法检查 + 写操作阻断
@@ -160,7 +184,7 @@ open http://localhost:5173
 1. DuckDB 初始化（`analysis.duckdb`）
 2. MySQL 业务表创建（sessions / messages / datasets）
 3. DatasetRegistry 加载 Catalog
-4. 上下文构建就绪
+4. Context Builder 就绪
 
 ### 验证
 
@@ -215,7 +239,7 @@ npm run dev
 │   │   ├── services/            业务逻辑
 │   │   │   ├── dataset_manager.py   Dataset 导入 / 删除
 │   │   │   ├── dataset_registry.py  Dataset Registry
-│   │   │   ├── prompt_builder.py    上下文构建
+│   │   │   ├── prompt_builder.py    Context Builder
 │   │   │   └── task_analyzer.py     意图分析
 │   │   ├── tools/               工具函数
 │   │   │   ├── chart.py         自动可视化 → ECharts
@@ -314,13 +338,13 @@ python -m evaluation.benchmark
 A: 兼容 OpenAI API 格式的模型均可。默认 DeepSeek，修改 `LLM_BASE_URL` 和 `LLM_MODEL` 即可切换。
 
 **Q: 支持哪些文件格式？**
-A: `.xlsx`、`.xls`、`.csv`。Excel 默认导入所有 Sheet，每个 Sheet 生成独立数据集。
+A: `.xlsx`、`.xls`、`.csv`。Excel 默认导入所有 Sheet，每个 Sheet 生成独立 Dataset。
 
 **Q: 上传的数据安全吗？**
-A: 文件名 UUID 重命名存储，SQL 经 sqlglot 校验，写操作（INSERT/UPDATE/DELETE/DROP）被阻断，执行有超时保护。
+A: 文件名 UUID 重命名存储，SQL 经 sqlglot 校验，写操作被阻断，执行有超时保护。
 
 **Q: 如何添加新的数据源（如 Parquet、API）？**
-A: 在 DatasetManager 中新增 `import_parquet()` 方法，注册到 DatasetRegistry 即可。AI Pipeline 无需修改。
+A: 在 DatasetManager 中新增导入方法，注册到 DatasetRegistry 即可。AI Pipeline 无需修改。
 
 **Q: 需要 GPU 吗？**
 A: 不需要。DuckDB 是嵌入式数据库，LLM 调用远程 API。
