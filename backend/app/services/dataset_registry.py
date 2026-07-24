@@ -84,12 +84,17 @@ class DatasetRegistry:
         self,
         session_id: Optional[str] = None,
         top_k: int = 10,
+        question: Optional[str] = None,
     ) -> Catalog:
         """Get the catalog — all datasets visible to the current session.
 
+        Args:
+            session_id: Filter by session (demo data always included).
+            top_k: Maximum tables to return (controls prompt size).
+            question: Optional question for future relevance-based sorting.
+
         Returns:
             Demo datasets + session's own uploaded datasets.
-            Limited to top_k tables to control prompt size.
         """
         tables = []
         for table_name, meta in self._index.items():

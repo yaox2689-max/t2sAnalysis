@@ -70,7 +70,7 @@ async def upload_dataset(
             display_name=file.filename,
         )
 
-        # Get preview (first 5 rows)
+        # Get preview (first 5 rows) with profile
         previews = []
         for ds in datasets:
             try:
@@ -78,6 +78,23 @@ async def upload_dataset(
                     f'SELECT * FROM "{ds.table_name}" LIMIT 5'
                 ).fetchdf()
                 preview_rows = result.to_dict("records")
+
+                # Build enriched columns with profile info
+                enriched_columns = ds.columns_meta.copy()
+                if ds.profile_meta and "columns" in ds.profile_meta:
+                    for col_info in ds.profile_meta["columns"]:
+                        # Match by column name
+                        for ec in enriched_columns:
+                            if ec.get("name") == col_info.get("name"):
+                                ec["semantic_type"] = col_info.get("semantic_type", "text")
+                                ec["null_ratio"] = col_info.get("null_ratio", 0)
+                                ec["unique_count"] = col_info.get("unique_count", 0)
+                                ec["top_values"] = col_info.get("top_values", [])
+                                if col_info.get("min"):
+                                    ec["min"] = col_info["min"]
+                                    ec["max"] = col_info["max"]
+                                break
+
                 previews.append({
                     "dataset_id": ds.id,
                     "table_name": ds.table_name,
@@ -86,8 +103,9 @@ async def upload_dataset(
                     "sheet_name": ds.sheet_name,
                     "row_count": ds.row_count,
                     "column_count": ds.column_count,
-                    "columns": ds.columns_meta,
+                    "columns": enriched_columns,
                     "preview_rows": preview_rows,
+                    "profile": ds.profile_meta,
                 })
             except Exception:
                 previews.append({

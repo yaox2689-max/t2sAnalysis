@@ -1,3 +1,35 @@
+[project]
+name = "t2s-analysis-backend"
+version = "2.0.0"
+description = "AI Data Analyst Agent — natural language to SQL with DuckDB analytics"
+requires-python = ">=3.9"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic-settings>=2.6.0",
+    "python-dotenv>=1.0.0",
+    "sqlalchemy[asyncio]>=2.0.0",
+    "aiomysql>=0.2.0",
+    "redis>=5.2.0",
+    "sqlglot>=25.0.0",
+    "openai>=1.0.0",
+    "numpy>=1.24.0",
+    "duckdb>=0.10.0",
+    "pandas>=2.0.0",
+    "openpyxl>=3.1.0",
+    "xlrd>=2.0.0",
+    "chardet>=5.0.0",
+    "python-multipart>=0.0.6",
+    "langgraph>=0.2.0",
+]
+
+[project.scripts]
+t2s-backend = "main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

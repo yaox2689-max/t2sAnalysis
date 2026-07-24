@@ -33,9 +33,12 @@ def clean_column_name(name: str, index: int, seen: set[str]) -> str:
     # Remove special characters, keep Chinese + letters + digits + underscore
     cleaned = re.sub(r"[^\w一-鿿]", "_", name)
 
-    # Prefix if starts with digit
+    # Prefix if starts with digit (PRD: 2024年 → year_2024, generic: 123abc → n_123abc)
     if cleaned and cleaned[0].isdigit():
-        cleaned = f"c_{cleaned}"
+        if "年" in name:
+            cleaned = f"year_{cleaned}"
+        else:
+            cleaned = f"n_{cleaned}"
 
     # Collapse consecutive underscores
     cleaned = re.sub(r"_+", "_", cleaned).strip("_")
