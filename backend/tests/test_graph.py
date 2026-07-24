@@ -34,6 +34,7 @@ SAMPLE_RESULT = QueryResult(columns=["id"], rows=[{"id": 1}])
 
 BASE_STATE: AgentState = {
     "question": "test",
+    "session_id": None,
     "history": [],
     "task_plan": SAMPLE_PLAN,
     "schema_context": SAMPLE_SCHEMA,

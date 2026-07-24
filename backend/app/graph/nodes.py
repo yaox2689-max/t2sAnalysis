@@ -45,6 +45,7 @@ async def retrieve_schema_node(
         SchemaRetriever → schema_context
     """
     question = state["question"]
+    session_id = state.get("session_id")
 
     # New path: DatasetRegistry + PromptBuilder
     if registry is not None and prompt_builder is not None:
@@ -53,7 +54,7 @@ async def retrieve_schema_node(
         registry: DatasetRegistry
         prompt_builder: PromptBuilder
 
-        catalog = registry.get_catalog(question=question, top_k=10)
+        catalog = registry.get_catalog(session_id=session_id, question=question, top_k=10)
         prompt_text = prompt_builder.build_prompt(catalog)
         available_tables = [t.table_name for t in catalog.tables]
 

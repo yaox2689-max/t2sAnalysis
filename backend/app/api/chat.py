@@ -163,6 +163,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
     try:
         state = await ctx.graph.ainvoke({
             "question": request.question,
+            "session_id": request.session_id,
             "history": [],
             "retry_count": 0,
             "max_retries": 3,

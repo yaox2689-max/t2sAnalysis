@@ -16,6 +16,7 @@ class AgentState(TypedDict):
     """State passed between LangGraph nodes in the SQL Agent workflow."""
 
     question: str
+    session_id: Optional[str]
     history: list[dict]
 
     task_plan: Optional[TaskPlan]
