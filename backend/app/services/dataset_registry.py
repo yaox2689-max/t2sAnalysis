@@ -143,6 +143,14 @@ class DatasetRegistry:
     def _build_table_schema(self, table_name: str, meta: dict) -> Optional[TableSchema]:
         """Build a TableSchema by profiling the DuckDB table."""
         try:
+            # Build original_name lookup from columns_meta
+            columns_meta = meta.get("columns_meta") or []
+            original_lookup = {}
+            if isinstance(columns_meta, list):
+                for cm in columns_meta:
+                    if isinstance(cm, dict):
+                        original_lookup[cm.get("name", "")] = cm.get("original_name", "")
+
             # Use profiler if available
             if self._profiler:
                 profile = self._profiler.profile(table_name)
@@ -157,6 +165,7 @@ class DatasetRegistry:
                         min_value=col.get("min"),
                         max_value=col.get("max"),
                         top_values=col.get("top_values", []),
+                        original_name=original_lookup.get(col["name"], ""),
                     ))
                 return TableSchema(
                     table_name=table_name,

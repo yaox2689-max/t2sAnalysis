@@ -55,8 +55,9 @@ _DEFAULT_TEMPLATE = """你是一个数据分析专家。根据用户的问题和
 class PromptBuilder:
     """Assemble SQL generation prompts from Catalog."""
 
-    def __init__(self, template: Optional[str] = None) -> None:
+    def __init__(self, template: Optional[str] = None, duckdb_engine: object = None) -> None:
         self._template = template or _DEFAULT_TEMPLATE
+        self._engine = duckdb_engine
 
     def build_context(self, catalog: Catalog) -> PromptContext:
         """Catalog → PromptContext (structured)."""
@@ -106,11 +107,25 @@ class PromptBuilder:
         for col in table.columns:
             lines.append(self._format_column(col))
 
+        # Sample rows (critical for LLM to understand column semantics)
+        sample_rows = self._fetch_sample_rows(table.table_name)
+        if sample_rows:
+            lines.append("")
+            lines.append("Sample data (first 3 rows):")
+            for row in sample_rows:
+                vals = ", ".join(f"{k}={v}" for k, v in row.items() if v is not None)
+                lines.append(f"  {vals}")
+
         return "\n".join(lines)
 
     def _format_column(self, col: ColumnSchema) -> str:
         """Format a single column's schema + profile."""
-        parts = [f"- {col.name} ({col.data_type}, {col.semantic_type})"]
+        # Show original name if it differs from cleaned name
+        display_name = col.name
+        if col.original_name and col.original_name != col.name:
+            display_name = f"{col.name} (原始列名: {col.original_name})"
+
+        parts = [f"- {display_name} ({col.data_type}, {col.semantic_type})"]
 
         # Stats line
         stats = []
@@ -129,6 +144,16 @@ class PromptBuilder:
             parts.append(f"  Examples: {examples}")
 
         return "\n".join(parts)
+
+    def _fetch_sample_rows(self, table_name: str) -> list[dict]:
+        """Fetch first 3 rows from DuckDB for the prompt."""
+        if self._engine is None:
+            return []
+        try:
+            result = self._engine.execute(f'SELECT * FROM "{table_name}" LIMIT 3').fetchdf()
+            return result.to_dict("records")
+        except Exception:
+            return []
 
     @staticmethod
     def _source_label(source_type: str) -> str:

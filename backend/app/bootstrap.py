@@ -76,9 +76,9 @@ class Bootstrap:
         self.registry = DatasetRegistry(duckdb_engine, self.profiler)
         await self._load_datasets_from_mysql(db, duckdb_engine)
 
-        # 6. Init PromptBuilder
+        # 6. Init PromptBuilder (with DuckDB engine for sample rows)
         from app.services.prompt_builder import PromptBuilder
-        self.prompt_builder = PromptBuilder()
+        self.prompt_builder = PromptBuilder(duckdb_engine=duckdb_engine)
 
         # 7. Init DuckDBExecutor
         from app.tools.duckdb_executor import DuckDBExecutor
