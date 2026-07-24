@@ -48,6 +48,7 @@ _TIME_KEYWORDS = frozenset({
     "year", "month", "day", "hour", "minute",
     "created_at", "updated_at", "purchase_date",
     "order_date", "shipping_date", "delivery_date",
+    "日期", "时间", "年", "月", "日",
 })
 
 _CATEGORY_KEYWORDS = frozenset({
@@ -56,6 +57,8 @@ _CATEGORY_KEYWORDS = frozenset({
     "product_category", "product_name", "customer_city",
     "payment_type", "review_score",
     "_id",
+    "名称", "品牌", "类别", "类型", "状态", "城市", "地区",
+    "产品", "商品", "客户", "部门", "渠道", "等级",
 })
 
 _NUMERIC_TYPES = frozenset({
@@ -69,6 +72,9 @@ _NUMERIC_KEYWORDS = frozenset({
     "score", "value", "weight", "height", "length", "width",
     "cost", "profit", "discount", "tax", "fee",
     "payment_value", "price", "freight_value",
+    "销售额", "销量", "金额", "数量", "总价", "收入",
+    "成本", "利润", "价格", "单价", "总额", "总量",
+    "占比", "比率", "评分", "得分",
 })
 
 
