@@ -16,6 +16,7 @@ WORKDIR /app
 COPY --from=builder /install /usr/local
 
 COPY app/ ./app/
+COPY prompts/ ./prompts/
 COPY main.py .
 
 EXPOSE 8000

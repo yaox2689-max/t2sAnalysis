@@ -9,6 +9,7 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY --from=builder /install /usr/local
 COPY app/ ./app/
+COPY prompts/ ./prompts/
 COPY main.py .
 
 # Run DB init on first start
