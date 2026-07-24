@@ -20,6 +20,7 @@ class AgentState(TypedDict):
 
     task_plan: Optional[TaskPlan]
     schema_context: Optional[SchemaContext]
+    prompt_text: Optional[str]
     generated_sql: Optional[GeneratedSQL]
     validation_result: Optional[ValidationResult]
     query_result: Optional[QueryResult]

@@ -90,9 +90,22 @@ class SQLGenerator:
         self,
         task_plan: TaskPlan,
         schema_context: SchemaContext,
+        prompt_text: Optional[str] = None,
     ) -> GeneratedSQL:
-        """Generate a SQL statement from a structured task plan."""
-        schema_text = _build_schema_text(schema_context)
+        """Generate a SQL statement from a structured task plan.
+
+        Args:
+            task_plan: Structured task description.
+            schema_context: Schema info for validation.
+            prompt_text: Pre-built prompt from PromptBuilder (new path).
+                If None, falls back to legacy _build_schema_text.
+        """
+        if prompt_text:
+            schema_text = ""  # prompt_text already includes schema
+            system_prompt = prompt_text
+        else:
+            schema_text = _build_schema_text(schema_context)
+            system_prompt = self._system_prompt
 
         user_prompt = (
             f"## Task Plan\n\n"
@@ -101,13 +114,15 @@ class SQLGenerator:
             f"Dimensions: {', '.join(task_plan.dimensions)}\n"
             f"Time Range: {task_plan.time_range}\n\n"
             f"Today's date is {datetime.now().strftime('%Y-%m-%d')}.\n\n"
-            f"## Schema Context\n\n{schema_text}"
         )
+
+        if schema_text:
+            user_prompt += f"## Schema Context\n\n{schema_text}"
 
         response = await self.client.chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": self._system_prompt},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.1,

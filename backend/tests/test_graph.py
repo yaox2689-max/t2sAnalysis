@@ -37,6 +37,7 @@ BASE_STATE: AgentState = {
     "history": [],
     "task_plan": SAMPLE_PLAN,
     "schema_context": SAMPLE_SCHEMA,
+    "prompt_text": None,
     "generated_sql": None,
     "validation_result": None,
     "query_result": None,
@@ -59,7 +60,7 @@ class FakeRetriever:
 
 
 class FakeGenerator:
-    async def generate(self, plan, schema):
+    async def generate(self, plan, schema, prompt_text=None):
         return SAMPLE_SQL
 
 

@@ -33,10 +33,41 @@ async def analyze_task_node(
 
 async def retrieve_schema_node(
     state: AgentState,
-    retriever: object,
+    retriever: object = None,
+    registry: object = None,
+    prompt_builder: object = None,
 ) -> dict:
-    """Call SchemaRetriever and write ``schema_context`` into state."""
+    """Build schema context and prompt text for SQL generation.
+
+    New path (registry + prompt_builder):
+        Catalog → PromptBuilder → prompt_text
+    Legacy path (retriever):
+        SchemaRetriever → schema_context
+    """
     question = state["question"]
+
+    # New path: DatasetRegistry + PromptBuilder
+    if registry is not None and prompt_builder is not None:
+        from app.services.dataset_registry import DatasetRegistry
+        from app.services.prompt_builder import PromptBuilder
+        registry: DatasetRegistry
+        prompt_builder: PromptBuilder
+
+        catalog = registry.get_catalog(question=question, top_k=10)
+        prompt_text = prompt_builder.build_prompt(catalog)
+        available_tables = [t.table_name for t in catalog.tables]
+
+        # Build a minimal SchemaContext for backward compatibility (validation)
+        schema_ctx = SchemaContext(
+            tables=available_tables,
+            columns={
+                t.table_name: [{"column_name": c.name, "data_type": c.data_type} for c in t.columns]
+                for t in catalog.tables
+            },
+        )
+        return {"schema_context": schema_ctx, "prompt_text": prompt_text}
+
+    # Legacy path: SchemaRetriever
     ctx: SchemaContext = await retriever.retrieve(question)  # type: ignore[union-attr]
     return {"schema_context": ctx}
 
@@ -48,7 +79,10 @@ async def generate_sql_node(
     """Call SQLGenerator and write ``generated_sql`` + ``current_sql``."""
     plan = state["task_plan"]
     ctx = state["schema_context"]
-    result: GeneratedSQL = await generator.generate(plan, ctx)  # type: ignore[union-attr]
+    prompt_text = state.get("prompt_text")
+    result: GeneratedSQL = await generator.generate(  # type: ignore[union-attr]
+        plan, ctx, prompt_text=prompt_text,
+    )
     return {
         "generated_sql": result,
         "current_sql": result.sql,

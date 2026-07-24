@@ -44,22 +44,29 @@ def _async_partial(fn, **kwargs):
 
 def build_graph(
     analyzer: object,
-    retriever: object,
-    generator: object,
-    validator: object,
-    executor: object,
-    reflection: object,
+    retriever: object = None,
+    registry: object = None,
+    prompt_builder: object = None,
+    generator: object = None,
+    validator: object = None,
+    executor: object = None,
+    reflection: object = None,
 ) -> StateGraph:
     """Build and compile the SQL Agent workflow graph.
 
-    Each node wraps a module injected from outside — making every
-    node fully mockable in tests.
+    New path: pass registry + prompt_builder (DuckDB + Catalog).
+    Legacy path: pass retriever (SchemaRetriever + MySQL).
     """
     workflow = StateGraph(AgentState)
 
     # ── Nodes ─────────────────────────────────────────────
     workflow.add_node("analyze", _async_partial(analyze_task_node, analyzer=analyzer))
-    workflow.add_node("retrieve", _async_partial(retrieve_schema_node, retriever=retriever))
+    workflow.add_node("retrieve", _async_partial(
+        retrieve_schema_node,
+        retriever=retriever,
+        registry=registry,
+        prompt_builder=prompt_builder,
+    ))
     workflow.add_node("generate", _async_partial(generate_sql_node, generator=generator))
     workflow.add_node("validate", _async_partial(validate_sql_node, validator=validator))
     workflow.add_node("execute", _async_partial(execute_sql_node, executor=executor))

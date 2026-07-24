@@ -41,6 +41,10 @@ class Bootstrap:
 
     def __init__(self) -> None:
         self._initialized = False
+        self.profiler = None
+        self.registry = None
+        self.prompt_builder = None
+        self.dataset_manager = None
 
     async def run(self) -> None:
         """Full startup sequence."""
@@ -57,7 +61,34 @@ class Bootstrap:
         # 2. Import demo data if needed
         self._init_demo_data(duckdb_engine)
 
-        # 3. Log final state
+        # 3. Init SchemaProfiler
+        from app.tools.schema_profiler import SchemaProfiler
+        self.profiler = SchemaProfiler(duckdb_engine)
+
+        # 4. Init DatasetRegistry + load existing tables
+        from app.services.dataset_registry import DatasetRegistry
+        self.registry = DatasetRegistry(duckdb_engine, self.profiler)
+        self.registry.load_from_duckdb()
+
+        # Register demo datasets with display names
+        for table_name, display_name in _DEMO_DATASETS.items():
+            if table_name in duckdb_engine.tables():
+                self.registry.register(
+                    table_name=table_name,
+                    display_name=display_name,
+                    source_type="demo",
+                )
+        logger.info({"event": "registry_ready", "tables": len(self.registry.list_tables())})
+
+        # 5. Init PromptBuilder
+        from app.services.prompt_builder import PromptBuilder
+        self.prompt_builder = PromptBuilder()
+
+        # 6. Init DatasetManager
+        from app.services.dataset_manager import DatasetManager
+        self.dataset_manager = DatasetManager(duckdb_engine)
+
+        # 7. Log final state
         tables = duckdb_engine.tables()
         logger.info({"event": "bootstrap_complete", "tables": tables})
 
