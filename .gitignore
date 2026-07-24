@@ -38,3 +38,7 @@ frontend/.vite/
 backend/scripts/olist_data/
 backend/run.bat
 backend/evaluation/report.json
+
+# DuckDB runtime data
+backend/data/analysis.duckdb
+backend/data/analysis.duckdb.wal

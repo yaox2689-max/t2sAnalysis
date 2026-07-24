@@ -1,0 +1,16 @@
+customer_id,customer_unique_id,customer_zip_code_prefix,customer_city,customer_state
+C001,UNIQ001,01001,sao paulo,SP
+C002,UNIQ002,01001,rio de janeiro,RJ
+C003,UNIQ003,01001,belo horizonte,MG
+C004,UNIQ004,01001,salvador,BA
+C005,UNIQ005,01001,brasilia,DF
+C006,UNIQ006,01001,curitiba,PR
+C007,UNIQ007,01001,porto alegre,RS
+C008,UNIQ008,01001,recife,PE
+C009,UNIQ009,01001,fortaleza,CE
+C010,UNIQ010,01001,manaus,AM
+C011,UNIQ011,01001,santos,SP
+C012,UNIQ012,01001,niteroi,RJ
+C013,UNIQ013,01001,uberlandia,MG
+C014,UNIQ014,01001,feira de santana,BA
+C015,UNIQ015,01001,goiania,GO

@@ -1,0 +1,11 @@
+product_id,product_category_name,product_name_length,product_description_length,product_photos_qty,product_weight_g,product_length_cm,product_height_cm,product_width_cm
+PROD001,eletronicos,15,200,3,597.51,84.74,6.93,28.91
+PROD002,eletronicos,15,200,3,402.59,49.7,18.51,15.97
+PROD003,moveis,15,200,3,3091.29,17.02,23.64,19.38
+PROD004,roupas,15,200,3,3810.35,85.49,32.78,48.3
+PROD005,alimentos,15,200,3,3877.22,45.02,33.58,48.82
+PROD006,esportes,15,200,3,218.86,42.08,24.45,27.74
+PROD007,livros,15,200,3,2518.5,17.16,33.2,12.67
+PROD008,eletronicos,15,200,3,4548.01,10.42,22.9,46.58
+PROD009,roupas,15,200,3,3650.45,87.4,14.57,40.07
+PROD010,moveis,15,200,3,2994.31,82.99,38.86,48.12
