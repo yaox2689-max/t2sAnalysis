@@ -44,6 +44,7 @@ class Bootstrap:
         self.profiler = None
         self.registry = None
         self.prompt_builder = None
+        self.executor = None
         self.dataset_manager = None
 
     async def run(self) -> None:
@@ -84,11 +85,15 @@ class Bootstrap:
         from app.services.prompt_builder import PromptBuilder
         self.prompt_builder = PromptBuilder()
 
-        # 6. Init DatasetManager
+        # 6. Init DuckDBExecutor
+        from app.tools.duckdb_executor import DuckDBExecutor
+        self.executor = DuckDBExecutor(duckdb_engine)
+
+        # 7. Init DatasetManager
         from app.services.dataset_manager import DatasetManager
         self.dataset_manager = DatasetManager(duckdb_engine)
 
-        # 7. Log final state
+        # 8. Log final state
         tables = duckdb_engine.tables()
         logger.info({"event": "bootstrap_complete", "tables": tables})
 

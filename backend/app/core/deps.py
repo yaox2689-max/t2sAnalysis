@@ -1,9 +1,9 @@
 """Application context — global dependencies with lazy initialisation.
 
 Initialises on first request:
-1. Database connection pool
-2. SchemaIndex (FAISS)
-3. LangGraph Workflow with all node modules
+1. Bootstrap (DuckDB + Registry + PromptBuilder + Executor)
+2. LLM clients (TaskAnalyzer, SQLGenerator, ReflectionLoop)
+3. LangGraph Workflow
 4. ChartTool + InsightTool
 
 Usage:
@@ -48,41 +48,15 @@ class AppContext:
 
             logger.info({"event": "app_init_start"})
 
-            # 1. Database
+            # 1. Bootstrap (DuckDB + Registry + PromptBuilder + Executor)
+            from app.bootstrap import bootstrap
+            await bootstrap.run()
+
+            # 2. MySQL (business metadata only — sessions, messages)
             from app.core.database import db
             db.init()
 
-            # 2. Schema Repository
-            from app.repositories.schema_repository import SchemaRepository
-            repo = SchemaRepository()
-
-            # 3. Embedding provider (dummy for now — real embedding uses OpenAI)
-            from app.schemas.embedding import EmbeddingProvider
-
-            class _DummyEmbed(EmbeddingProvider):
-                async def embed(self, texts: list[str]) -> list[list[float]]:
-                    dim = 384
-                    return [[0.01] * dim for _ in texts]
-
-            embed_provider = _DummyEmbed()
-
-            # 4. Schema Index
-            from app.schemas.schema_index import SchemaIndex
-            index = SchemaIndex(repo, embed_provider)
-            schema_ok = False
-            try:
-                await index.build()
-                schema_ok = True
-                logger.info({"event": "schema_index_built"})
-            except Exception as exc:
-                logger.error({"event": "schema_index_build_failed", "error": str(exc)}, exc_info=True)
-                logger.warning({"event": "schema_index_degraded", "detail": "Falling back to keyword-only retrieval"})
-
-            # 5. Schema Retriever
-            from app.schemas.schema_retriever import SchemaRetriever
-            retriever = SchemaRetriever(index, repo)
-
-            # 6. LLM client config
+            # 3. LLM client config
             api_key = settings.LLM_API_KEY
             model = settings.LLM_MODEL
             base_url = settings.LLM_BASE_URL
@@ -90,41 +64,44 @@ class AppContext:
             if not api_key:
                 logger.warning({"event": "llm_api_key_missing"})
 
-            # 7. Task Analyzer
+            # 4. Task Analyzer
             from app.services.task_analyzer import TaskAnalyzer
             analyzer = TaskAnalyzer(api_key=api_key, model=model, base_url=base_url)
 
-            # 8. SQL Generator
+            # 5. SQL Generator
             from app.agents.sql_generator import SQLGenerator
             generator = SQLGenerator(api_key=api_key, model=model, base_url=base_url)
 
-            # 9. Validator
+            # 6. Validator
             from app.tools.sql_validator import SQLValidator
             validator = SQLValidator()
 
-            # 10. Executor
-            from app.tools.sql_executor import SafeExecutor
-            executor = SafeExecutor()
+            # 7. Executor (DuckDB)
+            executor = bootstrap.executor
 
-            # 11. Reflection
+            # 8. Reflection
             from app.agents.reflection import ReflectionLoop
+            # Reflection needs a retriever for schema_error re-retrieval
+            # Use a minimal adapter that wraps the registry
+            retriever_adapter = _RegistryRetrieverAdapter(bootstrap.registry)
             reflection = ReflectionLoop(
                 api_key=api_key, model=model, base_url=base_url,
-                sql_generator=generator, schema_retriever=retriever,
+                sql_generator=generator, schema_retriever=retriever_adapter,
             )
 
-            # 12. Build the Workflow graph
+            # 9. Build the Workflow graph (new path: registry + prompt_builder)
             from app.graph.graph import build_graph
             self.graph = build_graph(
                 analyzer=analyzer,
-                retriever=retriever,
+                registry=bootstrap.registry,
+                prompt_builder=bootstrap.prompt_builder,
                 generator=generator,
                 validator=validator,
                 executor=executor,
                 reflection=reflection,
             )
 
-            # 13. Tools
+            # 10. Tools
             self.chart_tool = ChartTool()
             self.insight_tool = InsightTool(api_key=api_key, model=model, base_url=base_url)
 
@@ -133,5 +110,31 @@ class AppContext:
             return self
 
 
-# Global singleton
+class _RegistryRetrieverAdapter:
+    """Adapter that wraps DatasetRegistry to look like a SchemaRetriever.
+
+    Used by ReflectionLoop for schema_error re-retrieval.
+    The reflection loop calls retriever.retrieve(question) when it
+    detects a schema error, and this adapter makes that work with
+    the new registry.
+    """
+
+    def __init__(self, registry: object) -> None:
+        self._registry = registry
+
+    async def retrieve(self, question: str, **kwargs) -> object:
+        """Re-retrieve schema context using the registry."""
+        from app.models.task import SchemaContext
+
+        catalog = self._registry.get_catalog(question=question, top_k=10)
+        return SchemaContext(
+            tables=[t.table_name for t in catalog.tables],
+            columns={
+                t.table_name: [{"column_name": c.name, "data_type": c.data_type} for c in t.columns]
+                for t in catalog.tables
+            },
+        )
+
+
+# Module-level singleton
 app_ctx = AppContext()
