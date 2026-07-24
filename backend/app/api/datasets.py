@@ -29,6 +29,14 @@ def _get_bootstrap():
     return bootstrap
 
 
+async def _ensure_bootstrap():
+    """Ensure bootstrap is initialized, return it."""
+    bs = _get_bootstrap()
+    if not bs._initialized:
+        await bs.run()
+    return bs
+
+
 def _ensure_upload_dir():
     os.makedirs(_UPLOAD_DIR, exist_ok=True)
 
@@ -42,9 +50,7 @@ async def upload_dataset(
 
     Returns dataset metadata including preview data.
     """
-    bootstrap = _get_bootstrap()
-    if not bootstrap._initialized:
-        raise HTTPException(status_code=503, detail="System not initialized")
+    bootstrap = await _ensure_bootstrap()
 
     # Validate extension
     ext = os.path.splitext(file.filename or "")[1].lower()
@@ -129,9 +135,7 @@ async def upload_dataset(
 @router.get("")
 async def list_datasets(session_id: str):
     """List all datasets for a session."""
-    bootstrap = _get_bootstrap()
-    if not bootstrap._initialized:
-        raise HTTPException(status_code=503, detail="System not initialized")
+    bootstrap = await _ensure_bootstrap()
 
     catalog = bootstrap.registry.get_catalog(session_id=session_id, top_k=100)
     datasets = []
@@ -155,9 +159,7 @@ async def list_datasets(session_id: str):
 @router.delete("/{table_name}")
 async def delete_dataset(table_name: str):
     """Delete a dataset (DROP TABLE + unregister)."""
-    bootstrap = _get_bootstrap()
-    if not bootstrap._initialized:
-        raise HTTPException(status_code=503, detail="System not initialized")
+    bootstrap = await _ensure_bootstrap()
 
     # Check if table exists
     if table_name not in bootstrap.registry.list_tables():
