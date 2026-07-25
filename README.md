@@ -90,10 +90,12 @@ npm install
 
 # 5. 启动（两个终端）
 # 终端 1:
-cd backend && uvicorn main:app --reload
+cd backend
+uvicorn main:app --reload
 
 # 终端 2:
-cd frontend && npm run dev
+cd frontend
+npm run dev
 
 # 6. 打开浏览器
 # http://localhost:5173
