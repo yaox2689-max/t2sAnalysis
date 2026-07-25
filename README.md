@@ -251,7 +251,6 @@ npm run dev
 │   │   └── bootstrap.py         系统启动初始化
 │   ├── prompts/                 Prompt 模板
 │   ├── scripts/
-│   │   ├── schema.sql           Olist DDL
 │   │   └── schema_datasets.sql  datasets 表 DDL
 │   ├── tests/                   测试用例（160+）
 │   ├── requirements.txt
