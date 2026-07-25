@@ -154,15 +154,33 @@ const Settings: React.FC = () => {
         />
         <SettingItem
           icon={<CloudServerOutlined />}
-          label="数据库"
+          label="分析引擎"
+          value="DuckDB（嵌入式）"
+          accent="#3b82f6"
+        />
+        <SettingItem
+          icon={<DatabaseOutlined />}
+          label="元数据库"
           value="MySQL 8.0"
           accent="#3b82f6"
         />
         <SettingItem
           icon={<SearchOutlined />}
           label="Schema 检索"
-          value="FAISS + 关键词"
+          value="DatasetRegistry + 列语义分析"
           accent="#ec4899"
+        />
+        <SettingItem
+          icon={<ReloadOutlined />}
+          label="查询缓存"
+          value="Redis（1小时 TTL）"
+          accent="#ef4444"
+        />
+        <SettingItem
+          icon={<ApiOutlined />}
+          label="链路追踪"
+          value="LangSmith（可选）"
+          accent="#8b5cf6"
         />
       </div>
     </div>

@@ -2,7 +2,7 @@
 name = "t2s-analysis-backend"
 version = "2.0.0"
 description = "AI Data Analyst Agent — natural language to SQL with DuckDB analytics"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
@@ -21,6 +21,10 @@ dependencies = [
     "chardet>=5.0.0",
     "python-multipart>=0.0.6",
     "langgraph>=0.2.0",
+    "langsmith>=0.1.0",
+    "bcrypt>=4.0.0",
+    "python-jose[cryptography]>=3.3.0",
+    "cryptography>=41.0.0",
 ]
 
 [project.scripts]

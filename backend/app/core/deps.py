@@ -50,6 +50,18 @@ class AppContext:
 
             logger.info({"event": "app_init_start"})
 
+            # 0. LangSmith tracing (set env vars before any LangGraph import)
+            if settings.LANGSMITH_API_KEY:
+                import os
+                os.environ["LANGSMITH_TRACING"] = "true"
+                os.environ["LANGSMITH_API_KEY"] = settings.LANGSMITH_API_KEY
+                os.environ["LANGSMITH_PROJECT"] = settings.LANGSMITH_PROJECT
+                # LangChain compat (some langgraph versions read these)
+                os.environ["LANGCHAIN_TRACING_V2"] = "true"
+                os.environ["LANGCHAIN_API_KEY"] = settings.LANGSMITH_API_KEY
+                os.environ["LANGCHAIN_PROJECT"] = settings.LANGSMITH_PROJECT
+                logger.info({"event": "langsmith_enabled", "project": settings.LANGSMITH_PROJECT})
+
             # 1. Bootstrap (DuckDB + Registry + PromptBuilder + Executor)
             from app.bootstrap import bootstrap
             await bootstrap.run()
@@ -91,7 +103,17 @@ class AppContext:
                 sql_generator=generator, schema_retriever=retriever_adapter,
             )
 
-            # 9. Executor Router (DuckDB + optional ExternalDB)
+            # 9. Redis + Query Cache
+            from app.core.redis import redis_client
+            redis_client.init(
+                host=settings.REDIS_HOST,
+                port=settings.REDIS_PORT,
+                db=settings.REDIS_DB,
+            )
+            from app.core.cache import QueryCache
+            query_cache = QueryCache(redis_client) if redis_client.is_available else None
+
+            # 10. Executor Router (DuckDB + optional ExternalDB + Cache)
             from app.tools.executor_router import ExecutorRouter
             from app.tools.external_db_executor import ExternalDBExecutor
             external_executor = ExternalDBExecutor(timeout=settings.SQL_TIMEOUT)
@@ -99,7 +121,8 @@ class AppContext:
                 duckdb_executor=executor,
                 registry=bootstrap.registry,
                 external_executor=external_executor,
-                connection_store=None,  # connections API uses bootstrap.registry directly
+                connection_store=None,
+                cache=query_cache,
             )
 
             # 10. Build the Workflow graph (new path: registry + prompt_builder)
