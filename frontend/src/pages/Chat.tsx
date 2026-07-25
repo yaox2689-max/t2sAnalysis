@@ -52,18 +52,18 @@ const { Text, Paragraph } = Typography;
 const SUGGESTIONS = [
   {
     icon: <BarChartOutlined />,
-    text: "各品类的销售总额排名",
-    desc: "品类分析",
+    text: "上传的文件中，哪个指标数值最高？",
+    desc: "数据分析",
   },
   {
     icon: <LineChartOutlined />,
-    text: "最近6个月的月度销售趋势",
-    desc: "趋势分析",
+    text: "帮我对比各维度的数据差异",
+    desc: "对比分析",
   },
   {
     icon: <SearchOutlined />,
-    text: "订单量最多的前10个州",
-    desc: "地区分析",
+    text: "总结数据中的主要趋势和规律",
+    desc: "趋势洞察",
   },
 ];
 
