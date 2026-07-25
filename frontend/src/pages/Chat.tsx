@@ -50,21 +50,9 @@ const { TextArea } = Input;
 const { Text, Paragraph } = Typography;
 
 const SUGGESTIONS = [
-  {
-    icon: <BarChartOutlined />,
-    text: "上传的文件中，哪个指标数值最高？",
-    desc: "数据分析",
-  },
-  {
-    icon: <LineChartOutlined />,
-    text: "帮我对比各维度的数据差异",
-    desc: "对比分析",
-  },
-  {
-    icon: <SearchOutlined />,
-    text: "总结数据中的主要趋势和规律",
-    desc: "趋势洞察",
-  },
+  { icon: <PaperClipOutlined />, desc: "上传数据", text: "Excel / CSV 文件" },
+  { icon: <SearchOutlined />, desc: "提出问题", text: "用自然语言描述分析需求" },
+  { icon: <BarChartOutlined />, desc: "获取洞察", text: "自动生成图表和分析结论" },
 ];
 
 // ── ECharts component ──────────────────────────────────
@@ -353,7 +341,7 @@ const WelcomeScreen: React.FC<{ onSend: (text: string) => void }> = ({
           letterSpacing: -0.5,
         }}
       >
-        AI Data Analyst
+        Dataset Intelligence Platform
       </div>
       <div
         className="animate-fade-up stagger-1"
@@ -364,7 +352,7 @@ const WelcomeScreen: React.FC<{ onSend: (text: string) => void }> = ({
           lineHeight: 1.6,
         }}
       >
-        用自然语言提问，获取数据洞察
+        上传数据，用自然语言提问，获取洞察
       </div>
 
       <div
@@ -378,12 +366,8 @@ const WelcomeScreen: React.FC<{ onSend: (text: string) => void }> = ({
         {SUGGESTIONS.map((s, i) => (
           <div
             key={s.text}
-            role="button"
-            tabIndex={0}
             className={`suggestion-card animate-fade-up stagger-${i + 2}`}
-            onClick={() => onSend(s.text)}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onSend(s.text); }}
-            style={{ flex: 1 }}
+            style={{ flex: 1, cursor: "default" }}
           >
             <div
               style={{
