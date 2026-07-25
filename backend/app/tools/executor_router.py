@@ -1,10 +1,10 @@
 """Executor Router — routes SQL to DuckDB or ExternalDB based on table source_type.
 
 Parses SQL to find table names, checks the registry for their source,
-and delegates to the correct executor.
+and delegates to the correct executor. Results are cached via QueryCache.
 
 Usage:
-    router = ExecutorRouter(duckdb_executor, registry, connection_store)
+    router = ExecutorRouter(duckdb_executor, registry, external_executor, cache)
     result = await router.execute(sql, session_id="ses_abc", user_id="usr_123")
 """
 
@@ -44,12 +44,14 @@ class ExecutorRouter:
         duckdb_executor: object,
         registry: object,
         external_executor: object,
-        connection_store: object,
+        connection_store: object = None,
+        cache: object = None,
     ) -> None:
         self._duckdb = duckdb_executor
         self._external = external_executor
         self._registry = registry
         self._connections = connection_store
+        self._cache = cache
 
     async def execute(
         self,
@@ -57,7 +59,16 @@ class ExecutorRouter:
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
     ) -> QueryResult:
-        """Route to the correct executor based on table source_type."""
+        """Route to the correct executor based on table source_type.
+
+        Checks cache first; on miss, executes and caches the result.
+        """
+        # Check cache
+        if self._cache:
+            cached = await self._cache.get(sql, user_id=user_id)
+            if cached is not None:
+                return cached
+
         tables_in_query = _extract_table_names(sql)
 
         # Check if any table is a MySQL direct-connection table
@@ -68,7 +79,16 @@ class ExecutorRouter:
                 if connection_id and self._connections:
                     cfg = await self._connections.get_config(connection_id)
                     if cfg:
-                        return await self._external.execute(sql, cfg)
+                        result = await self._external.execute(sql, cfg)
+                        if self._cache:
+                            await self._cache.set(sql, result, user_id=user_id)
+                        return result
 
         # Default: use DuckDB
-        return await self._duckdb.execute(sql)
+        result = await self._duckdb.execute(sql)
+
+        # Cache result
+        if self._cache:
+            await self._cache.set(sql, result, user_id=user_id)
+
+        return result

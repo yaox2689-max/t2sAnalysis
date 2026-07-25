@@ -1,273 +1,117 @@
-# Dataset Intelligence Platform
+# t2sAnalysis — AI 数据分析助手
 
-**Natural Language → Dataset → SQL → Insight**
+**自然语言 → SQL → 可视化 → 洞察**
 
-AI doesn't query databases directly.
-It reasons over Dataset Registry, where schema, semantics and metadata are already understood.
+上传任意 Excel/CSV 文件或连接 MySQL 数据库，用自然语言提问，AI 自动生成 SQL 查询、ECharts 图表和业务洞察。
 
-## Why Dataset Intelligence?
+## 核心能力
 
-**一个抽象 — Dataset**
-所有数据源进入系统后统一成为 Dataset。Excel、CSV、数据库、API — AI 不需要学习不同数据源格式。
-
-**一个认知层 — Dataset Registry**
-Registry 不只是目录。它包含 Schema、语义类型、统计信息和示例数据，构成 AI 理解数据的完整上下文。
-
-**一个执行引擎 — DuckDB**
-所有分析查询统一执行，AI 无需区分数据来源。
+| 能力 | 说明 |
+|------|------|
+| 自然语言查询 | LangGraph Agent 编排：意图分析 → SQL 生成 → 校验 → 执行 → 自修复 |
+| 多数据源 | Excel/CSV 上传 + MySQL 直连，统一 Dataset 抽象 |
+| 自动可视化 | 规则引擎选图（Line / Bar / Pie / Scatter / Histogram） |
+| 业务洞察 | LLM 总结查询结果，输出可读结论 + 证据分析 |
+| 多轮对话 | 自动加载最近 20 条消息作为上下文 |
+| SSE 流式 | 实时推送 Agent 每个节点的执行进度 |
+| 多用户隔离 | JWT 认证，用户级数据隔离 |
+| 查询缓存 | Redis 缓存相同 SQL 结果，1 小时 TTL |
+| 链路追踪 | LangSmith 集成（可选），完整 Agent 执行链路可视化 |
 
 ## Architecture
 
 ```
-                          用户提问
-                             │
-                             ▼
- ┌─────────────────────────────────────────────────────┐
- │              AI Reasoning Layer                      │
- │                                                     │
- │   任务理解 → SQL 规划 → 安全校验 → 自动修复          │
- │                                                     │
- └────────────────────────▲────────────────────────────┘
-                          │
-                          │  AI 的认知边界
-                          │
- ┌─────────────────────────────────────────────────────┐
- │          Dataset Intelligence Layer                  │
- │                                                     │
- │   Dataset Registry — 统一数据目录                    │
- │   Semantic Schema — 列级画像 + 语义类型              │
- │   Data Profile — 统计信息 + 示例值                   │
- │   Context Retrieval — 按需构建数据上下文             │
- │                                                     │
- │   ←—— AI 的语义数据视图 ——→                          │
- │                                                     │
- └────────────────────────▲────────────────────────────┘
-                          │
- ┌─────────────────────────────────────────────────────┐
- │          Unified Analytics Engine                    │
- │                                                     │
- │                   DuckDB                             │
- │                                                     │
- │   执行 Dataset 查询，返回结果                        │
- │                                                     │
- └────────────────────────▲────────────────────────────┘
-                          │
- ┌─────────────────────────────────────────────────────┐
- │               Dataset Sources                       │
- │                                                     │
- │   Excel  |  CSV  |  Database  |  API  |  Future     │
- │                                                     │
- └─────────────────────────────────────────────────────┘
-
-                          元数据
-                             │
-                             ▼
-                      ┌─────────────┐
-                      │    MySQL    │
-                      │ 会话 / 消息  │
-                      │ 数据集目录   │
-                      └─────────────┘
+                         用户提问
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────┐
+│              AI Reasoning Layer (LangGraph)          │
+│                                                     │
+│  任务理解 → Schema 检索 → SQL 生成 → 安全校验       │
+│       → 执行 → 反思重试（最多 3 次）                 │
+│                                                     │
+│  Post-tools: 图表 → 洞察 → 证据分析                  │
+└────────────────────────┬────────────────────────────┘
+                         │
+┌────────────────────────▼────────────────────────────┐
+│          Dataset Intelligence Layer                  │
+│                                                     │
+│  Dataset Registry — 统一数据目录                     │
+│  Schema Profiler — 列级画像 + 语义类型               │
+│  Prompt Builder — 按需构建数据上下文                 │
+└────────────────────────┬────────────────────────────┘
+                         │
+┌────────────────────────▼────────────────────────────┐
+│          Unified Analytics Engine                    │
+│                                                     │
+│  ExecutorRouter — 自动路由到 DuckDB 或 MySQL         │
+│  QueryCache — Redis 缓存（user_id + SQL hash）       │
+│  SQL Safety — 写操作阻断 + 超时保护                  │
+└────────────────────────┬────────────────────────────┘
+                         │
+         ┌───────────────┴───────────────┐
+         ▼                               ▼
+    DuckDB (嵌入式)              MySQL 直连（外部）
+    Excel/CSV 数据               生产数据库
 ```
 
-## Dataset Lifecycle
-
-```
-   Upload ──→ Import ──→ Profile ──→ Register ──→ Understand ──→ Query ──→ Insight
-                                                                         │
-                                                                         ▼
-                                                              Dataset = Living Data Asset
-```
-
-| 阶段 | 说明 |
-|------|------|
-| **Upload** | 用户上传 Excel / CSV |
-| **Import** | 列名清洗、类型推断、写入 DuckDB |
-| **Profile** | 列级统计 + 语义类型（dimension / measure / time） |
-| **Register** | 注册到 Dataset Registry，AI 可见 |
-| **Understand** | AI 通过 Registry 获取 Schema + 画像 + 示例值 |
-| **Query** | AI 生成 SQL，安全执行 |
-| **Insight** | 自动可视化 + 业务洞察 |
-
-## Core Capabilities
-
-| 能力 | 说明 |
-|------|------|
-| Dataset 抽象 | Excel / CSV 统一为 Dataset，一个引擎处理所有数据 |
-| 语义画像 | 自动推断列级语义类型（dimension / measure / time） |
-| Dataset-aware Agent | LangGraph 编排：意图分析 → SQL 生成 → 校验 → 执行 → 自修复 |
-| 安全执行 | 写操作阻断 + 超时保护 + 最多 3 次结构化重试 |
-| 自动可视化 | 规则引擎自动选图（Line / Bar / Pie / Scatter / Histogram） |
-| 业务洞察 | LLM 总结查询结果，输出可读的业务结论 |
-| 全链路可观测 | Trace ID 串联 + JSON 结构化日志 |
-
-## How It Works
-
-### 数据接入
-
-```
-Excel / CSV 上传
-       │
-       ▼
- Dataset Manager — 导入 / 清洗 / 注册
-       │
-       ▼
- Schema Profiler — 列级统计 + 语义类型推断
-       │
-       ▼
- Dataset Registry — 注册到统一数据目录
-       │
-       ▼
- DuckDB + MySQL 元数据
-```
-
-### 查询分析
-
-```
-用户提问
-       │
-       ▼
- Task Analyzer — 意图理解 → TaskPlan
-       │
-       ▼
- Dataset Registry — 检索相关数据集（top-k）
-       │
-       ▼
- Context Builder — Schema + 画像 + 示例值 → Dataset Context
-       │
-       ▼
- SQL Generator — LLM 基于 Dataset Context 生成 SQL
-       │
-       ▼
- 安全校验 — 语法检查 + 写操作阻断
-       │
-       ├── 通过 → DuckDB 执行（超时保护）
-       │              │
-       │              ├── 成功 → 可视化 + 洞察 → 返回用户
-       │              └── 失败 ─┐
-       │                       │
-       └── 失败 ───────────────┤
-                               ▼
-                        自动修复（错误分类 + 重试，最多 3 次）
-```
-
-## Quick Start（5 分钟）
+## Quick Start
 
 ### 前置条件
 
-- Docker & Docker Compose
+- Python 3.10+
+- Node.js 18+
+- MySQL 8.0
+- Redis 7（可选，用于查询缓存）
 - LLM API Key（[DeepSeek](https://platform.deepseek.com) / OpenAI）
 
-### 步骤
+### 安装
 
 ```bash
 # 1. 克隆
 git clone https://github.com/yaox2689-max/t2sAnalysis.git
 cd t2sAnalysis
 
-# 2. 配置（唯一必须的步骤）
+# 2. 后端依赖（二选一）
+cd backend
+pip install -r requirements.txt     # pip 方式
+# 或
+uv sync                             # uv 方式
+
+# 3. 配置
 cp .env.example .env
-# 编辑 .env，填入 LLM_API_KEY
+# 编辑 .env，至少填入：
+#   DB_PASSWORD=你的MySQL密码
+#   LLM_API_KEY=你的API Key
 
-# 3. 启动后端 + 数据库（自动建表）
-docker compose up -d
-
-# 4. 启动前端（另开终端）
-cd frontend
+# 4. 前端依赖
+cd ../frontend
 npm install
-npm run dev
 
-# 5. 打开浏览器
-open http://localhost:5173
+# 5. 启动（两个终端）
+# 终端 1:
+cd backend && uvicorn main:app --reload
+
+# 终端 2:
+cd frontend && npm run dev
+
+# 6. 打开浏览器
+# http://localhost:5173
 ```
 
 启动后自动完成：
-1. DuckDB 初始化（`analysis.duckdb`）
-2. MySQL 业务表创建（sessions / messages / datasets）
-3. DatasetRegistry 加载 Catalog
-4. Context Builder 就绪
+- DuckDB 初始化
+- MySQL 业务表创建（users / sessions / messages / datasets / mysql_connections）
+- DatasetRegistry 加载 Catalog
+- Redis 连接（如可用）
 
-### 验证
+## 使用流程
 
-```bash
-curl http://localhost:8000/health
-# → {"status": "ok"}
-```
-
-## Local Development
-
-```bash
-# 方式 1: pip
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload
-
-# 方式 2: uv
-cd backend
-uv pip install -e .
-uv run uvicorn main:app --reload
-
-# 前端（另开终端）
-cd frontend
-npm install
-npm run dev
-```
-
-## Project Structure
-
-```
-├── backend/
-│   ├── app/
-│   │   ├── agents/              AI Pipeline
-│   │   │   ├── sql_generator.py LLM → SQL
-│   │   │   ├── reflection.py    错误分类 + 修复策略
-│   │   │   └── state.py         AgentState 统一 Context
-│   │   ├── api/                 API 路由
-│   │   │   ├── chat.py          聊天 API
-│   │   │   └── datasets.py      文件上传 API
-│   │   ├── core/                基础设施
-│   │   │   ├── config.py        Pydantic Settings
-│   │   │   ├── database.py      MySQL（业务元数据）
-│   │   │   ├── duckdb.py        DuckDB（分析引擎）
-│   │   │   ├── logging.py       JSON 结构化日志
-│   │   │   ├── tracing.py       Trace ID 串联
-│   │   │   └── prompt_loader.py Prompt 文件管理
-│   │   ├── graph/               LangGraph StateGraph
-│   │   │   ├── graph.py         图编排
-│   │   │   ├── nodes.py         节点实现
-│   │   │   └── routers.py       条件路由
-│   │   ├── models/              Pydantic 契约
-│   │   ├── services/            业务逻辑
-│   │   │   ├── dataset_manager.py   Dataset 导入 / 删除
-│   │   │   ├── dataset_registry.py  Dataset Registry
-│   │   │   ├── prompt_builder.py    Context Builder
-│   │   │   └── task_analyzer.py     意图分析
-│   │   ├── tools/               工具函数
-│   │   │   ├── chart.py         自动可视化 → ECharts
-│   │   │   ├── column_cleaner.py 列名清洗
-│   │   │   ├── duckdb_executor.py DuckDB 执行器
-│   │   │   ├── insight.py       业务洞察
-│   │   │   ├── schema_profiler.py 语义画像
-│   │   │   └── sql_validator.py  SQL 安全校验
-│   │   └── bootstrap.py         系统启动初始化
-│   ├── prompts/                 Prompt 模板
-│   ├── scripts/
-│   │   └── schema_datasets.sql  datasets 表 DDL
-│   ├── tests/                   测试用例（160+）
-│   ├── requirements.txt
-│   ├── pyproject.toml
-│   └── main.py                  FastAPI 入口
-├── frontend/
-│   ├── src/
-│   │   ├── pages/
-│   │   │   ├── Chat.tsx         聊天页（拖拽上传 + 图表 + 洞察）
-│   │   │   ├── History.tsx      历史会话
-│   │   │   └── Settings.tsx     系统设置
-│   │   └── services/api.ts      API 客户端
-│   └── package.json
-├── docker-compose.yml           开发环境
-├── docker-compose.prod.yml      生产环境
-└── .env.example                 环境变量模板
-```
+1. **注册/登录** — 首次使用注册账号
+2. **上传数据** — 拖拽或点击上传 Excel/CSV
+3. **提问** — 自然语言提问，如"各品牌月度销售额趋势"
+4. **查看结果** — SQL + 数据表 + ECharts 图表 + 业务洞察 + 证据分析
+5. **（可选）连接 MySQL** — 侧边栏"数据库连接"，输入连接信息，自动发现表
 
 ## Configuration
 
@@ -275,44 +119,149 @@ npm run dev
 
 | 变量 | 必填 | 默认值 | 说明 |
 |------|------|--------|------|
-| `LLM_API_KEY` | ✅ | — | DeepSeek / OpenAI API Key |
-| `LLM_MODEL` | — | `deepseek-chat` | 模型名称 |
+| `LLM_API_KEY` | **是** | — | DeepSeek / OpenAI API Key |
+| `LLM_MODEL` | — | `deepseek-v4-flash` | 模型名称 |
 | `LLM_BASE_URL` | — | `https://api.deepseek.com` | API 端点 |
 | `DB_HOST` | — | `localhost` | MySQL 地址 |
-| `DB_PORT` | — | `3307` | MySQL 端口 |
-| `REDIS_HOST` | — | `localhost` | Redis 地址 |
+| `DB_PASSWORD` | **是** | — | MySQL 密码 |
+| `JWT_SECRET_KEY` | **是** | — | JWT 签名密钥（生产环境请更换） |
+| `REDIS_HOST` | — | `localhost` | Redis 地址（可选，用于缓存） |
+| `LANGSMITH_API_KEY` | — | — | LangSmith API Key（留空不接入） |
 | `SQL_TIMEOUT` | — | `10` | SQL 执行超时（秒） |
 
-完整变量见 [`.env.example`](.env.example)。
+完整变量见 [`.env.example`](backend/.env.example)。
 
 ## API Endpoints
 
+### Auth
+
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/chat` | 发送问题，返回 SQL + 图表 + 洞察 |
+| POST | `/api/auth/register` | 注册 → 返回 JWT |
+| POST | `/api/auth/login` | 登录 → 返回 JWT |
+| GET | `/api/auth/me` | 当前用户信息 |
+
+### Chat
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/chat` | 发送问题（非流式） |
+| POST | `/api/chat/stream` | 发送问题（SSE 流式） |
+
+### Sessions
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
 | POST | `/api/sessions` | 创建会话 |
 | GET | `/api/sessions` | 列出会话 |
 | GET | `/api/sessions/{id}` | 获取会话消息 |
 | DELETE | `/api/sessions/{id}` | 删除会话 |
-| POST | `/api/datasets/upload` | 上传 Excel/CSV 文件 |
+
+### Datasets
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/datasets/upload` | 上传 Excel/CSV |
 | GET | `/api/datasets?session_id=` | 列出数据集 |
 | DELETE | `/api/datasets/{table}` | 删除数据集 |
+
+### Connections
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/connections/test` | 测试 MySQL 连接 |
+| POST | `/api/connections` | 保存连接 + 注册表 |
+| GET | `/api/connections` | 列出连接 |
+| DELETE | `/api/connections/{id}` | 删除连接 |
+
+### System
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
 | GET | `/health` | 健康检查 |
+
+## Project Structure
+
+```
+├── backend/
+│   ├── app/
+│   │   ├── agents/               Agent Pipeline
+│   │   │   ├── sql_generator.py  LLM → SQL
+│   │   │   ├── reflection.py     错误分类 + 修复策略
+│   │   │   └── state.py          AgentState
+│   │   ├── api/                  API 路由
+│   │   │   ├── auth.py           注册/登录
+│   │   │   ├── chat.py           对话 + SSE 流式
+│   │   │   ├── connections.py    MySQL 连接管理
+│   │   │   └── datasets.py       文件上传
+│   │   ├── core/                 基础设施
+│   │   │   ├── auth.py           JWT 依赖注入
+│   │   │   ├── cache.py          Redis 查询缓存
+│   │   │   ├── config.py         Pydantic Settings
+│   │   │   ├── database.py       MySQL
+│   │   │   ├── deps.py           AppContext 依赖组装
+│   │   │   ├── duckdb.py         DuckDB 引擎
+│   │   │   ├── redis.py          Redis 客户端
+│   │   │   └── tracing.py        Trace ID
+│   │   ├── graph/                LangGraph StateGraph
+│   │   │   ├── graph.py          图编排
+│   │   │   ├── nodes.py          6 个节点
+│   │   │   └── routers.py        条件路由
+│   │   ├── models/               Pydantic 契约
+│   │   ├── services/             业务逻辑
+│   │   │   ├── auth_service.py   认证服务
+│   │   │   ├── credential_encryption.py  密码加密
+│   │   │   ├── dataset_manager.py   Dataset 导入
+│   │   │   ├── dataset_registry.py  Dataset Registry
+│   │   │   ├── prompt_builder.py    Context Builder
+│   │   │   └── task_analyzer.py     意图分析
+│   │   ├── tools/                工具
+│   │   │   ├── chart.py          自动可视化
+│   │   │   ├── duckdb_executor.py  DuckDB 执行器
+│   │   │   ├── evidence_analyzer.py 证据分析
+│   │   │   ├── executor_router.py  执行器路由
+│   │   │   ├── external_db_executor.py  MySQL 执行器
+│   │   │   ├── insight.py        业务洞察
+│   │   │   ├── sql_safety.py     SQL 写拦截
+│   │   │   └── sql_validator.py  SQL 校验
+│   │   └── bootstrap.py          系统初始化
+│   ├── prompts/                  Prompt 模板
+│   ├── evaluation/               Benchmark 评测
+│   ├── tests/                    测试（133+）
+│   ├── requirements.txt
+│   ├── pyproject.toml
+│   ├── .env.example
+│   └── main.py                   FastAPI 入口
+├── frontend/
+│   ├── src/
+│   │   ├── contexts/
+│   │   │   └── AuthContext.tsx    认证上下文
+│   │   ├── pages/
+│   │   │   ├── Chat.tsx          对话（SSE 流式 + 图表 + 洞察）
+│   │   │   ├── ConnectDatabase.tsx  MySQL 连接管理
+│   │   │   ├── History.tsx       历史会话
+│   │   │   ├── Login.tsx         登录/注册
+│   │   │   └── Settings.tsx      系统设置
+│   │   └── services/api.ts       API 客户端（含 SSE）
+│   └── package.json
+├── docker-compose.yml
+└── README.md
+```
 
 ## Tech Stack
 
 | 层 | 技术 |
 |---|------|
-| Backend | FastAPI + Python 3.9+ |
+| Backend | FastAPI + Python 3.10+ |
 | Agent | LangGraph |
-| LLM | DeepSeek / OpenAI |
-| Analytics | **DuckDB**（唯一分析引擎） |
-| Business DB | MySQL 8.0（元数据） |
-| Cache | Redis 7（Session / Cache） |
-| Frontend | React + Ant Design + ECharts |
-| SQL Analysis | sqlglot |
-| File Parsing | pandas（Excel）/ DuckDB（CSV） |
-| Logging | JSON + Trace ID |
+| LLM | DeepSeek / OpenAI（兼容 API） |
+| Analytics | **DuckDB**（嵌入式）+ MySQL 直连 |
+| Metadata | MySQL 8.0 |
+| Cache | Redis 7（SQL 结果缓存） |
+| Auth | JWT + bcrypt |
+| Tracing | LangSmith（可选） |
+| Frontend | React 18 + TypeScript + Ant Design 5 + ECharts 5 |
+| SQL | sqlglot（校验 + AST 解析） |
 
 ## Evaluation
 
@@ -321,32 +270,24 @@ cd backend
 python -m evaluation.benchmark
 ```
 
-> **注意**: 当前 Benchmark 使用 Mock Agent，尚未接入真实 LangGraph Pipeline。
-> 评测框架（metrics + golden dataset）已就绪，待接入真实 Agent 后即可运行端到端评测。
-
-| 指标 | 说明 |
-|------|------|
-| Task Accuracy | TaskPlan 与预期匹配度 |
-| SQL Executable | SQL 是否可执行 |
-| SQL Valid | 是否通过 AST 校验 |
-| Result Consistency | 结果列是否符合预期 |
+Benchmark 已接入真实 LangGraph Agent，运行前需确保 DuckDB 中有测试数据。
 
 ## FAQ
 
 **Q: 支持哪些 LLM？**
-A: 兼容 OpenAI API 格式的模型均可。默认 DeepSeek，修改 `LLM_BASE_URL` 和 `LLM_MODEL` 即可切换。
+A: 兼容 OpenAI API 格式的模型均可。默认 DeepSeek，修改 `.env` 中的 `LLM_BASE_URL` 和 `LLM_MODEL` 即可切换。
 
 **Q: 支持哪些文件格式？**
-A: `.xlsx`、`.xls`、`.csv`。Excel 默认导入所有 Sheet，每个 Sheet 生成独立 Dataset。
+A: `.xlsx`、`.xls`、`.csv`。Excel 默认导入所有 Sheet。
 
-**Q: 上传的数据安全吗？**
-A: 文件名 UUID 重命名存储，SQL 经 sqlglot 校验，写操作被阻断，执行有超时保护。
+**Q: 如何启用 LangSmith？**
+A: 在 `.env` 中填入 `LANGSMITH_API_KEY=你的key`，重启服务即可。留空则不接入。
 
-**Q: 如何添加新的数据源（如 Parquet、API）？**
-A: 在 DatasetManager 中新增导入方法，注册到 DatasetRegistry 即可。AI Pipeline 无需修改。
+**Q: Redis 必须安装吗？**
+A: 不必须。Redis 用于 SQL 查询缓存，不可用时自动降级（跳过缓存直接执行）。
 
-**Q: 需要 GPU 吗？**
-A: 不需要。DuckDB 是嵌入式数据库，LLM 调用远程 API。
+**Q: MySQL 直连安全吗？**
+A: 所有外部数据库连接均为只读，写操作（INSERT/UPDATE/DELETE/DROP）被 sqlglot AST 拦截。连接密码使用 Fernet 对称加密存储。
 
 ## License
 
