@@ -26,18 +26,12 @@ _UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..
 _ALLOWED_EXTENSIONS = {".xlsx", ".xls", ".csv"}
 
 
-def _get_bootstrap():
-    """Lazy-import bootstrap to avoid circular imports."""
-    from app.bootstrap import bootstrap
-    return bootstrap
-
-
 async def _ensure_bootstrap():
-    """Ensure bootstrap is initialized, return it."""
-    bs = _get_bootstrap()
-    if not bs._initialized:
-        await bs.run()
-    return bs
+    """Ensure bootstrap is initialized and return it."""
+    from app.bootstrap import bootstrap
+    if not bootstrap._initialized:
+        await bootstrap.run()
+    return bootstrap
 
 
 def _ensure_upload_dir():

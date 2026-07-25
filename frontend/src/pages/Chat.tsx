@@ -550,11 +550,17 @@ const Chat: React.FC<ChatProps> = ({
       setLoading(true);
       setProgressLabel("AI 正在分析您的问题");
 
+      let finished = false;
       const finish = () => {
+        if (finished) return;
+        finished = true;
         loadingRef.current = false;
         setLoading(false);
         setProgressLabel(undefined);
       };
+
+      // Safety timeout: if stream hangs for 3 minutes, force finish
+      const safetyTimer = setTimeout(finish, 180000);
 
       const controller = sendChatStream(
         { question, session_id: sid },
@@ -564,10 +570,12 @@ const Chat: React.FC<ChatProps> = ({
           }
         },
         (err) => {
+          clearTimeout(safetyTimer);
           message.error(err.message || "请求失败，请稍后重试");
           finish();
         },
         async () => {
+          clearTimeout(safetyTimer);
           try {
             const updated = await getSessionMessages(sid);
             setMessages(updated.messages);

@@ -5,6 +5,8 @@ or .env file. Every new config option should be added here with
 a proper type annotation and description.
 """
 
+import secrets
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -51,7 +53,7 @@ class Settings(BaseSettings):
     SQL_MAX_ROWS: int = 500
 
     # ── Auth ────────────────────────────────────────────
-    JWT_SECRET_KEY: str = "change-me-in-production"
+    JWT_SECRET_KEY: str = secrets.token_urlsafe(32)
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 1440
 
