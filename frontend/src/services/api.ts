@@ -20,6 +20,20 @@ export interface ChatRequest {
   session_id: string;
 }
 
+export interface EvidenceItem {
+  claim: string;
+  data: string[];
+  source: string;
+  strength: number | null;
+}
+
+export interface EvidenceReport {
+  conclusion: string;
+  evidence_chain: EvidenceItem[];
+  suggestions: string[];
+  limitations: string[];
+}
+
 export interface ChatResponse {
   message_id: number;
   session_id: string;
@@ -29,6 +43,7 @@ export interface ChatResponse {
   chart_type: string;
   echarts_option: Record<string, unknown>;
   insight: string;
+  evidence: EvidenceReport | null;
   elapsed_ms: number | null;
   error: string | null;
 }
@@ -48,6 +63,7 @@ export interface MessageInfo {
   chart_type: string | null;
   echarts_option: Record<string, unknown> | null;
   insight: string | null;
+  evidence: EvidenceReport | null;
   columns: string[] | null;
   rows_data: Record<string, unknown>[] | null;
   elapsed_ms: number | null;
@@ -59,6 +75,79 @@ export interface MessageInfo {
 export async function sendChat(req: ChatRequest): Promise<ChatResponse> {
   const res = await api.post<ChatResponse>("/chat", req, { timeout: 120000 });
   return res.data;
+}
+
+// ── SSE Streaming ────────────────────────────────────
+
+export interface StreamEvent {
+  type: "progress" | "result" | "error";
+  node?: string;
+  label?: string;
+  task_type?: string;
+  row_count?: number;
+  // result fields
+  message_id?: number;
+  session_id?: string;
+  sql?: string;
+  columns?: string[];
+  rows?: Record<string, unknown>[];
+  chart_type?: string;
+  echarts_option?: Record<string, unknown>;
+  insight?: string;
+  evidence?: EvidenceReport | null;
+  elapsed_ms?: number;
+  message?: string;
+}
+
+export function sendChatStream(
+  req: ChatRequest,
+  onEvent: (event: StreamEvent) => void,
+  onError: (error: Error) => void,
+  onComplete: () => void,
+): AbortController {
+  const controller = new AbortController();
+
+  (async () => {
+    try {
+      const res = await fetch("/api/chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const data = JSON.parse(line.slice(6)) as StreamEvent;
+            onEvent(data);
+          }
+        }
+      }
+      onComplete();
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        onError(err instanceof Error ? err : new Error("Stream failed"));
+      }
+    }
+  })();
+
+  return controller;
 }
 
 export async function createSession(): Promise<{ session_id: string }> {

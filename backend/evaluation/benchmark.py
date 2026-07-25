@@ -10,38 +10,42 @@ Usage:
 import asyncio
 import json
 import os
+import time
 from datetime import datetime, timezone
 
 
 async def _build_and_run():
     """Build the Workflow graph and run the benchmark."""
-    # We import lazily so that missing dependencies don't break
-    # the import of this module itself.
     from evaluation import runner
+    from app.core.deps import app_ctx
 
-    # NOTE: In a full integration setup, replace the mock agent
-    # below with the real LangGraph Workflow.
-    #
-    #   from app.graph.graph import build_graph
-    #   from app.services.task_analyzer import TaskAnalyzer
-    #   from app.schemas.schema_retriever import SchemaRetriever
-    #   ...
-    #
-    # For now, the mock verifies the runner + metrics are wired
-    # correctly.
+    # Ensure benchmark datasets are loaded into DuckDB before running.
+    ctx = await app_ctx.ensure_initialized()
 
-    class MockOutput:
-        task_plan = None
-        generated_sql = None
-        validation_result = None
-        query_result = None
-        retry_count = 0
-        elapsed_ms = 0.0
+    async def real_agent(question: str):
+        """Run the full LangGraph workflow and return results for scoring."""
+        start = time.perf_counter()
+        state = await ctx.graph.ainvoke({
+            "question": question,
+            "session_id": None,
+            "trace_id": None,
+            "history": [],
+            "retry_count": 0,
+            "max_retries": 3,
+            "errors": [],
+        })
+        elapsed_ms = (time.perf_counter() - start) * 1000
 
-    async def mock_agent(question: str) -> MockOutput:
-        return MockOutput()
+        return type("AgentOutput", (), {
+            "task_plan": state.get("task_plan"),
+            "generated_sql": state.get("generated_sql"),
+            "validation_result": state.get("validation_result"),
+            "query_result": state.get("query_result"),
+            "retry_count": state.get("retry_count", 0),
+            "elapsed_ms": elapsed_ms,
+        })()
 
-    report = await runner.run(mock_agent)
+    report = await runner.run(real_agent)
 
     # Print summary
     print(f"\n{'='*50}")

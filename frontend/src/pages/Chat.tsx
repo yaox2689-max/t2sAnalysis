@@ -11,6 +11,7 @@ import {
   LineChartOutlined,
   PaperClipOutlined,
   CloseCircleOutlined,
+  AuditOutlined,
 } from "@ant-design/icons";
 import * as echarts from "echarts/core";
 import { BarChart, LineChart, PieChart, ScatterChart } from "echarts/charts";
@@ -36,12 +37,11 @@ echarts.use([
   CanvasRenderer,
 ]);
 import {
-  sendChat,
+  sendChatStream,
   createSession,
   getSessionMessages,
   uploadDataset,
   deleteDataset,
-  ChatResponse,
   MessageInfo,
   DatasetPreview,
 } from "../services/api";
@@ -95,7 +95,7 @@ const EChart: React.FC<{ option: Record<string, unknown> }> = ({ option }) => {
 
 // ── Typing Indicator ───────────────────────────────────
 
-const TypingIndicator: React.FC = () => (
+const TypingIndicator: React.FC<{ progressLabel?: string }> = ({ progressLabel }) => (
   <div
     style={{
       display: "flex",
@@ -115,7 +115,7 @@ const TypingIndicator: React.FC = () => (
       <span className="typing-dot" />
     </div>
     <Text style={{ color: "#64748b", fontSize: 13.5 }}>
-      AI 正在分析您的问题
+      {progressLabel || "AI 正在分析您的问题"}
     </Text>
   </div>
 );
@@ -296,6 +296,73 @@ const AssistantMessage: React.FC<{ msg: MessageInfo }> = ({ msg }) => {
         </div>
       )}
 
+      {msg.evidence && msg.evidence.conclusion && (
+        <div
+          style={{
+            background: "linear-gradient(135deg, rgba(245,158,11,0.05), rgba(217,119,6,0.03))",
+            borderLeft: "3px solid #f59e0b",
+            borderRadius: "2px 10px 10px 2px",
+            padding: "14px 20px",
+            marginBottom: 12,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 8,
+            }}
+          >
+            <AuditOutlined style={{ color: "#f59e0b", fontSize: 14 }} />
+            <Text
+              strong
+              style={{
+                fontSize: 13,
+                color: "#d97706",
+                letterSpacing: 0.3,
+              }}
+            >
+              证据分析
+            </Text>
+          </div>
+          <Paragraph
+            style={{
+              margin: 0,
+              fontSize: 14,
+              lineHeight: 1.7,
+              color: "#1a1a2e",
+            }}
+          >
+            {msg.evidence.conclusion}
+          </Paragraph>
+          {msg.evidence.suggestions?.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <Text strong style={{ fontSize: 12, color: "#92400e" }}>
+                建议：
+              </Text>
+              <ul style={{ margin: "4px 0 0 16px", padding: 0 }}>
+                {msg.evidence.suggestions.map((s, i) => (
+                  <li
+                    key={i}
+                    style={{ fontSize: 13, color: "#78350f", lineHeight: 1.6 }}
+                  >
+                    {s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {msg.evidence.limitations?.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <Text style={{ fontSize: 12, color: "#94a3b8" }}>
+                局限性: {msg.evidence.limitations.join("; ")}
+              </Text>
+            </div>
+          )}
+        </div>
+      )}
+
       <div
         style={{
           display: "flex",
@@ -420,6 +487,7 @@ const Chat: React.FC<ChatProps> = ({
   const [messages, setMessages] = useState<MessageInfo[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [progressLabel, setProgressLabel] = useState<string | undefined>(undefined);
   const [initLoading, setInitLoading] = useState(true);
   const [datasets, setDatasets] = useState<DatasetPreview[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -480,30 +548,36 @@ const Chat: React.FC<ChatProps> = ({
       setInput("");
       loadingRef.current = true;
       setLoading(true);
+      setProgressLabel("AI 正在分析您的问题");
 
-      const controller = new AbortController();
+      const finish = () => {
+        loadingRef.current = false;
+        setLoading(false);
+        setProgressLabel(undefined);
+      };
+
+      const controller = sendChatStream(
+        { question, session_id: sid },
+        (event) => {
+          if (event.type === "progress" && event.label) {
+            setProgressLabel(`${event.label}...`);
+          }
+        },
+        (err) => {
+          message.error(err.message || "请求失败，请稍后重试");
+          finish();
+        },
+        async () => {
+          try {
+            const updated = await getSessionMessages(sid);
+            setMessages(updated.messages);
+          } catch {
+            // ignore
+          }
+          finish();
+        },
+      );
       sendAbortRef.current = controller;
-
-      try {
-        const res = await sendChat({ question, session_id: sid });
-        if (controller.signal.aborted) return;
-        if (res.error) {
-          message.error(res.error);
-        }
-        const updated = await getSessionMessages(sid);
-        if (controller.signal.aborted) return;
-        setMessages(updated.messages);
-      } catch (err: unknown) {
-        if (!controller.signal.aborted) {
-          const msg = err instanceof Error ? err.message : "请求失败，请稍后重试";
-          message.error(msg);
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          loadingRef.current = false;
-          setLoading(false);
-        }
-      }
     },
     []
   );
@@ -686,7 +760,7 @@ const Chat: React.FC<ChatProps> = ({
 
         {loading && (
           <div style={{ maxWidth: 880, marginBottom: 20 }}>
-            <TypingIndicator />
+            <TypingIndicator progressLabel={progressLabel} />
           </div>
         )}
 

@@ -112,6 +112,7 @@ class Bootstrap:
             "  insight TEXT,"
             "  `columns` JSON,"
             "  rows_data JSON,"
+            "  evidence JSON,"
             "  elapsed_ms FLOAT DEFAULT 0,"
             "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
             "  INDEX idx_messages_session (session_id)"
@@ -123,6 +124,12 @@ class Bootstrap:
             logger.info({"event": "chat_tables_ready"})
         except Exception as exc:
             logger.warning({"event": "chat_tables_exists", "detail": str(exc)[:100]})
+
+        # Migrate: add evidence column for existing databases
+        try:
+            await db.execute("ALTER TABLE messages ADD COLUMN evidence JSON")
+        except Exception:
+            pass  # column already exists
 
     async def _load_datasets_from_mysql(self, db: object, duckdb_engine: object) -> None:
         """Load dataset metadata from MySQL into the registry."""
