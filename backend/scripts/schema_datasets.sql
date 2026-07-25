@@ -1,4 +1,4 @@
--- datasets table: metadata for all analysis datasets (demo + user uploaded)
+-- datasets table: metadata for all analysis datasets
 -- Stored in MySQL (business metadata), separate from DuckDB (analysis data)
 
 CREATE TABLE IF NOT EXISTS datasets (

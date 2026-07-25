@@ -35,7 +35,6 @@ frontend/.vite/
 .claude/
 
 # Data / scripts
-backend/scripts/olist_data/
 backend/run.bat
 backend/evaluation/report.json
 

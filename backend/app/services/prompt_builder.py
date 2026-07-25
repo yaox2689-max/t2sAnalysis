@@ -40,8 +40,7 @@ _DEFAULT_TEMPLATE = """你是一个数据分析专家。根据用户的问题和
 3. 结果集不超过 500 行（自动添加 LIMIT）
 4. 使用聚合函数时必须 GROUP BY
 5. 优先使用语义类型来判断：measure 列可以 SUM/AVG，dimension 列可以 GROUP BY
-6. **必须优先使用「用户上传的数据」中的表。只有当用户数据中确实没有所需字段时，才使用「内置参考数据」。**
-7. **根据问题关键词选择最匹配的表：问题提到"区域/地区"→ 选区域表；提到"品牌"→ 选品牌表；提到"月度/趋势/月份"→ 选月度表。**
+6. **根据问题关键词选择最匹配的表：问题提到"区域/地区"→ 选区域表；提到"品牌"→ 选品牌表；提到"月度/趋势/月份"→ 选月度表。**
 8. **自动过滤汇总行：WHERE 条件中排除 "全国"、"合计"、"总计"、"小计" 等汇总/合计行。所有 SELECT 的列都要加 IS NOT NULL 过滤，排除空值行。**
 9. **交叉表处理：如果数据按月/季度分列（如 1月、2月、…、12月），需要用 UNPIVOT 或 UNION ALL 将列转为行，再按时间排序。不要直接 SELECT 年份行（如 2025年、2026年），要展开到具体月份。**
 10. 如果用户的问题中明确提到了某个表名，必须使用该表。
@@ -65,34 +64,14 @@ class PromptBuilder:
         self._engine = duckdb_engine
 
     def build_context(self, catalog: Catalog) -> PromptContext:
-        """Catalog → PromptContext (structured).
-
-        User-uploaded tables are listed first under a prominent header,
-        demo tables follow under a secondary header.
-        """
-        user_parts = []
-        demo_parts = []
+        """Catalog → PromptContext (structured)."""
+        schema_parts = []
 
         for table in catalog.tables:
-            formatted = self._format_table(table)
-            if table.source_type in ("excel", "csv"):
-                user_parts.append(formatted)
-            else:
-                demo_parts.append(formatted)
-
-        sections = []
-        if user_parts:
-            sections.append(
-                "## 用户上传的数据（优先使用）\n\n" + "\n\n".join(user_parts)
-            )
-        if demo_parts:
-            sections.append(
-                "## 内置参考数据（仅在用户数据无法回答问题时使用）\n\n"
-                + "\n\n".join(demo_parts)
-            )
+            schema_parts.append(self._format_table(table))
 
         return PromptContext(
-            schema="\n\n".join(sections) if sections else "",
+            schema="\n\n".join(schema_parts) if schema_parts else "",
             metadata={"table_count": len(catalog.tables)},
         )
 
@@ -184,7 +163,6 @@ class PromptBuilder:
     def _source_label(source_type: str) -> str:
         """Human-readable source type label."""
         labels = {
-            "demo": "内置 Demo 数据",
             "excel": "Excel 上传",
             "csv": "CSV 上传",
         }

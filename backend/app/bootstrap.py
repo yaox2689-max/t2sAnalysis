@@ -2,7 +2,7 @@
 
 Run once on application start:
 1. Open DuckDB connection
-2. Import demo seed data (if not already present)
+2. Create MySQL tables (sessions / messages / datasets)
 3. Initialize DatasetRegistry
 4. Initialize PromptBuilder
 
@@ -12,28 +12,11 @@ Usage:
     await bootstrap.run()
 """
 
-import csv
 import logging
 import os
 import uuid
-from pathlib import Path
 
 logger = logging.getLogger("t2s_analysis")
-
-# Seed CSV directory
-_SEED_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts", "seed")
-
-# Demo datasets: CSV filename → human-readable name
-_DEMO_DATASETS = {
-    "orders": "Olist Orders",
-    "customers": "Olist Customers",
-    "products": "Olist Products",
-    "payments": "Olist Payments",
-    "order_items": "Olist Order Items",
-    "sellers": "Olist Sellers",
-    "product_category": "Olist Product Categories",
-    "reviews": "Olist Reviews",
-}
 
 
 class Bootstrap:
@@ -65,32 +48,29 @@ class Bootstrap:
         await self._ensure_datasets_table(db)
         await self._ensure_chat_tables(db)
 
-        # 3. Demo data disabled — user only wants to analyze uploaded files
-        # self._init_demo_data(duckdb_engine)
-
-        # 4. Init SchemaProfiler
+        # 3. Init SchemaProfiler
         from app.tools.schema_profiler import SchemaProfiler
         self.profiler = SchemaProfiler(duckdb_engine)
 
-        # 5. Init DatasetRegistry + load from MySQL
+        # 4. Init DatasetRegistry + load from MySQL
         from app.services.dataset_registry import DatasetRegistry
         self.registry = DatasetRegistry(duckdb_engine, self.profiler)
         await self._load_datasets_from_mysql(db, duckdb_engine)
 
-        # 6. Init PromptBuilder (with DuckDB engine for sample rows)
+        # 5. Init PromptBuilder (with DuckDB engine for sample rows)
         from app.services.prompt_builder import PromptBuilder
         self.prompt_builder = PromptBuilder(duckdb_engine=duckdb_engine)
 
-        # 7. Init DuckDBExecutor
+        # 6. Init DuckDBExecutor
         from app.tools.duckdb_executor import DuckDBExecutor
         from app.core.config import settings as _settings
         self.executor = DuckDBExecutor(duckdb_engine, timeout=_settings.SQL_TIMEOUT)
 
-        # 8. Init DatasetManager
+        # 7. Init DatasetManager
         from app.services.dataset_manager import DatasetManager
         self.dataset_manager = DatasetManager(duckdb_engine, db, self.registry, self.profiler)
 
-        # 9. Log final state
+        # 8. Log final state
         tables = duckdb_engine.tables()
         logger.info({"event": "bootstrap_complete", "tables": tables})
 
@@ -166,10 +146,6 @@ class Bootstrap:
             if table_name not in existing_tables:
                 continue
 
-            # Skip demo data — only load user-uploaded datasets
-            if row["source_type"] == "demo":
-                continue
-
             columns_meta = row.get("columns_meta")
             if isinstance(columns_meta, str):
                 try:
@@ -186,48 +162,7 @@ class Bootstrap:
             )
             loaded += 1
 
-        # Demo auto-registration disabled — only user-uploaded data is visible
-        # for table_name in duckdb_engine.tables():
-        #     if table_name not in self.registry.list_tables():
-        #         ...
-
         logger.info({"event": "datasets_loaded_from_mysql", "count": loaded})
-
-    def _init_demo_data(self, engine: object) -> None:
-        """Import seed CSVs into DuckDB if demo tables don't exist."""
-        from app.core.duckdb import DuckDBEngine
-        engine: DuckDBEngine
-
-        existing = set(engine.tables())
-
-        # Check if any demo data already exists
-        if any(name in existing for name in _DEMO_DATASETS):
-            logger.info({"event": "demo_data_exists", "tables": list(existing)})
-            return
-
-        if not os.path.isdir(_SEED_DIR):
-            logger.warning({"event": "seed_dir_missing", "path": _SEED_DIR})
-            return
-
-        imported = []
-        for csv_name, display_name in _DEMO_DATASETS.items():
-            csv_path = os.path.join(_SEED_DIR, f"{csv_name}.csv")
-            if not os.path.exists(csv_path):
-                logger.warning({"event": "seed_csv_missing", "file": csv_name})
-                continue
-
-            # Use the CSV name directly as table name (readable in SHOW TABLES)
-            table_name = csv_name
-            engine.execute(
-                f"CREATE TABLE \"{table_name}\" AS SELECT * FROM read_csv('{csv_path}', header=true, auto_detect=true)"
-            )
-            imported.append(table_name)
-            logger.info({"event": "demo_table_imported", "table": table_name, "source": csv_name})
-
-        if imported:
-            logger.info({"event": "demo_data_imported", "count": len(imported), "tables": imported})
-        else:
-            logger.warning({"event": "demo_data_none_imported"})
 
 
 # Module-level singleton

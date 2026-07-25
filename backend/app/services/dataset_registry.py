@@ -37,7 +37,7 @@ class TableSchema:
     """A table's full description (schema + profile)."""
     table_name: str
     display_name: str
-    source_type: str            # "demo" | "excel" | "csv"
+    source_type: str            # "excel" | "csv"
     session_id: Optional[str] = None
     row_count: int = 0
     columns: list[ColumnSchema] = field(default_factory=list)
@@ -89,17 +89,16 @@ class DatasetRegistry:
         """Get the catalog — all datasets visible to the current session.
 
         Args:
-            session_id: Filter by session (demo data always included).
+            session_id: Filter by session.
             top_k: Maximum tables to return (controls prompt size).
             question: Optional question for future relevance-based sorting.
 
         Returns:
-            Demo datasets + session's own uploaded datasets.
+            All datasets for the current session.
         """
         tables = []
         for table_name, meta in self._index.items():
-            # Filter: show demo data + current session's data
-            if meta["source_type"] == "demo" or meta["session_id"] == session_id:
+            if meta["session_id"] == session_id:
                 schema = self._build_table_schema(table_name, meta)
                 if schema:
                     tables.append(schema)
@@ -124,17 +123,13 @@ class DatasetRegistry:
         return list(self._index.keys())
 
     def load_from_duckdb(self) -> None:
-        """Load all existing DuckDB tables into the registry.
-
-        Called during bootstrap after demo data is imported.
-        Tables not yet registered get auto-registered as 'demo'.
-        """
+        """Load all existing DuckDB tables into the registry."""
         tables = self._engine.tables()
         for table_name in tables:
             if table_name not in self._index:
                 self._index[table_name] = {
                     "display_name": table_name,
-                    "source_type": "demo",
+                    "source_type": "unknown",
                     "session_id": None,
                     "columns_meta": [],
                 }

@@ -155,7 +155,7 @@ const Settings: React.FC = () => {
         <SettingItem
           icon={<CloudServerOutlined />}
           label="数据库"
-          value="MySQL 8.0 (Olist)"
+          value="MySQL 8.0"
           accent="#3b82f6"
         />
         <SettingItem
