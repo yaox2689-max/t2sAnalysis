@@ -26,8 +26,7 @@ const SettingItem: React.FC<SettingItemProps> = ({
   accent = "#0d9488",
 }) => (
   <div
-    className="animate-fade-up"
-    className="setting-item"
+    className="setting-item animate-fade-up"
     style={{
       background: "#ffffff",
       border: "1px solid #e5e8ef",

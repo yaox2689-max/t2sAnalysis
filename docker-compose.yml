@@ -4,7 +4,7 @@ services:
     container_name: t2s-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-root123}
       MYSQL_DATABASE: t2s_analysis
     ports:
       - "3306:3306"
@@ -39,20 +39,23 @@ services:
       DEBUG: "false"
       HOST: "0.0.0.0"
       PORT: "8000"
-      CORS_ORIGINS: '["http://localhost:5173","http://localhost:80"]'
+      CORS_ORIGINS: '["http://localhost","http://localhost:80","http://localhost:5173"]'
       DB_HOST: mysql
       DB_PORT: "3306"
       DB_USER: root
-      DB_PASSWORD: root123
+      DB_PASSWORD: ${DB_PASSWORD:-root123}
       DB_NAME: t2s_analysis
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_DB: "0"
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-auto-generated-key-change-me}
       LLM_API_KEY: ${LLM_API_KEY:-}
-      LLM_MODEL: ${LLM_MODEL:-deepseek-v4-pro}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-v4-flash}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com}
       SQL_TIMEOUT: "10"
       SQL_MAX_ROWS: "500"
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-t2s-analysis}
     ports:
       - "8000:8000"
     depends_on:
@@ -60,6 +63,16 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: t2s-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
 
 volumes:
   mysql_data:
