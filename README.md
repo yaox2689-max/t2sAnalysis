@@ -65,7 +65,25 @@
 - Redis 7（可选，用于查询缓存）
 - LLM API Key（[DeepSeek](https://platform.deepseek.com) / OpenAI）
 
-### 安装
+### 方式 1：Docker 一键部署（推荐）
+
+```bash
+# 1. 克隆
+git clone https://github.com/yaox2689-max/t2sAnalysis.git
+cd t2sAnalysis
+
+# 2. 配置
+cp .env.example .env
+# 编辑 .env，填入 LLM_API_KEY（必填）
+
+# 3. 启动（MySQL + Redis + 后端 + 前端）
+docker compose up -d
+
+# 4. 打开浏览器
+# http://localhost
+```
+
+### 方式 2：本地开发
 
 ```bash
 # 1. 克隆
@@ -79,7 +97,7 @@ pip install -r requirements.txt     # pip 方式
 uv sync                             # uv 方式
 
 # 3. 配置
-cp .env.example .env
+cp ../.env.example .env
 # 编辑 .env，至少填入：
 #   DB_PASSWORD=你的MySQL密码
 #   LLM_API_KEY=你的API Key
@@ -90,12 +108,10 @@ npm install
 
 # 5. 启动（两个终端）
 # 终端 1:
-cd backend
-uvicorn main:app --reload
+cd backend && uvicorn main:app --reload
 
 # 终端 2:
-cd frontend
-npm run dev
+cd frontend && npm run dev
 
 # 6. 打开浏览器
 # http://localhost:5173
@@ -131,7 +147,7 @@ npm run dev
 | `LANGSMITH_API_KEY` | — | — | LangSmith API Key（留空不接入） |
 | `SQL_TIMEOUT` | — | `10` | SQL 执行超时（秒） |
 
-完整变量见 [`.env.example`](backend/.env.example)。
+完整变量见 [`.env.example`](.env.example)。
 
 ## API Endpoints
 
@@ -232,7 +248,6 @@ npm run dev
 │   ├── tests/                    测试（133+）
 │   ├── requirements.txt
 │   ├── pyproject.toml
-│   ├── .env.example
 │   └── main.py                   FastAPI 入口
 ├── frontend/
 │   ├── src/
@@ -245,8 +260,11 @@ npm run dev
 │   │   │   ├── Login.tsx         登录/注册
 │   │   │   └── Settings.tsx      系统设置
 │   │   └── services/api.ts       API 客户端（含 SSE）
+│   ├── Dockerfile
+│   ├── nginx.conf
 │   └── package.json
 ├── docker-compose.yml
+├── .env.example                  环境变量模板
 └── README.md
 ```
 

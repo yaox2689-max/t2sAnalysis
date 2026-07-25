@@ -58,6 +58,9 @@ services:
       LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-t2s-analysis}
     ports:
       - "8000:8000"
+    volumes:
+      - ./backend/data:/app/data
+      - ./.env:/app/.env:ro
     depends_on:
       mysql:
         condition: service_healthy
