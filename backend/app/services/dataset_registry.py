@@ -37,8 +37,9 @@ class TableSchema:
     """A table's full description (schema + profile)."""
     table_name: str
     display_name: str
-    source_type: str            # "excel" | "csv"
+    source_type: str            # "excel" | "csv" | "mysql"
     session_id: Optional[str] = None
+    user_id: Optional[str] = None
     row_count: int = 0
     columns: list[ColumnSchema] = field(default_factory=list)
 
@@ -64,6 +65,7 @@ class DatasetRegistry:
         display_name: str,
         source_type: str,
         session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
         columns_meta: Optional[list[dict]] = None,
     ) -> None:
         """Register a dataset in the catalog."""
@@ -71,6 +73,7 @@ class DatasetRegistry:
             "display_name": display_name,
             "source_type": source_type,
             "session_id": session_id,
+            "user_id": user_id,
             "columns_meta": columns_meta or [],
         }
         logger.info({"event": "dataset_registered", "table": table_name, "source": source_type})
@@ -83,25 +86,32 @@ class DatasetRegistry:
     def get_catalog(
         self,
         session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
         top_k: int = 10,
         question: Optional[str] = None,
     ) -> Catalog:
-        """Get the catalog — all datasets visible to the current session.
+        """Get the catalog — all datasets visible to the current session/user.
 
         Args:
             session_id: Filter by session.
+            user_id: Filter by user (for cross-session dataset access).
             top_k: Maximum tables to return (controls prompt size).
             question: Optional question for future relevance-based sorting.
 
         Returns:
-            All datasets for the current session.
+            All matching datasets.
         """
         tables = []
         for table_name, meta in self._index.items():
-            if meta["session_id"] == session_id:
-                schema = self._build_table_schema(table_name, meta)
-                if schema:
-                    tables.append(schema)
+            # Filter by user_id if specified
+            if user_id and meta.get("user_id") and meta["user_id"] != user_id:
+                continue
+            # Filter by session_id if specified
+            if session_id and meta.get("session_id") != session_id:
+                continue
+            schema = self._build_table_schema(table_name, meta)
+            if schema:
+                tables.append(schema)
 
         # Limit to top_k
         if len(tables) > top_k:
@@ -167,6 +177,7 @@ class DatasetRegistry:
                     display_name=meta.get("display_name", table_name),
                     source_type=meta.get("source_type", "unknown"),
                     session_id=meta.get("session_id"),
+                    user_id=meta.get("user_id"),
                     row_count=profile.get("row_count", 0),
                     columns=columns,
                 )
@@ -182,6 +193,7 @@ class DatasetRegistry:
                     display_name=meta.get("display_name", table_name),
                     source_type=meta.get("source_type", "unknown"),
                     session_id=meta.get("session_id"),
+                    user_id=meta.get("user_id"),
                     columns=columns,
                 )
         except Exception as exc:

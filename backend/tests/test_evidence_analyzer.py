@@ -17,18 +17,18 @@ from app.tools.evidence_analyzer import (
 class TestFormatResult:
     def test_empty(self):
         text = _format_result(QueryResult(columns=[], rows=[]))
-        assert "Rows: 0" in text
+        assert "行数: 0" in text
 
     def test_basic(self):
         result = QueryResult(
             columns=["category", "sales"],
             rows=[{"category": "A", "sales": 100}, {"category": "B", "sales": 200}],
         )
-        text = _format_result(result, label="primary")
-        assert "[primary]" in text
-        assert "Preview" in text
-        assert "avg=150.00" in text
-        assert "2 distinct" in text
+        text = _format_result(result, label="主数据")
+        assert "[主数据]" in text
+        assert "预览" in text
+        assert "均值=150.00" in text
+        assert "2 个不同值" in text
 
 
 # ── _parse tests ────────────────────────────────────────
@@ -143,8 +143,8 @@ class TestAnalyze:
         call_args = analyzer._client.chat.completions.create.call_args
         messages = call_args[1]["messages"]
         user_msg = messages[1]["content"]
-        assert "[primary]" in user_msg
-        assert "[comparison]" in user_msg
+        assert "[主数据]" in user_msg
+        assert "[对比数据]" in user_msg
 
     async def test_non_json_response_fallback(self, analyzer):
         analyzer._client.chat.completions.create.return_value = _mock_llm(

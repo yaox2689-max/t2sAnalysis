@@ -12,7 +12,10 @@ import tempfile
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+
+from app.core.auth import get_current_user
+from app.services.auth_service import UserOut
 
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
 
@@ -45,12 +48,22 @@ def _ensure_upload_dir():
 async def upload_dataset(
     file: UploadFile = File(...),
     session_id: str = Form(...),
+    user: UserOut = Depends(get_current_user),
 ):
     """Upload an Excel/CSV file and import into DuckDB.
 
     Returns dataset metadata including preview data.
     """
     bootstrap = await _ensure_bootstrap()
+
+    # Verify session belongs to user
+    from app.core.database import db as _db
+    sess = await _db.execute(
+        "SELECT id FROM sessions WHERE id = :sid AND user_id = :uid",
+        {"sid": session_id, "uid": user.id},
+    )
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
 
     # Validate extension
     ext = os.path.splitext(file.filename or "")[1].lower()
@@ -74,6 +87,7 @@ async def upload_dataset(
             temp_path,
             session_id=session_id,
             display_name=file.filename,
+            user_id=user.id,
         )
 
         # Get preview (first 5 rows) with profile
@@ -133,37 +147,39 @@ async def upload_dataset(
 
 
 @router.get("")
-async def list_datasets(session_id: str):
-    """List all datasets for a session."""
+async def list_datasets(session_id: str, user: UserOut = Depends(get_current_user)):
+    """List all datasets for a session (owned by current user)."""
     bootstrap = await _ensure_bootstrap()
 
-    catalog = bootstrap.registry.get_catalog(session_id=session_id, top_k=100)
+    catalog = bootstrap.registry.get_catalog(session_id=session_id, user_id=user.id, top_k=100)
     datasets = []
     for table in catalog.tables:
-        if table.session_id == session_id:
-            datasets.append({
-                "table_name": table.table_name,
-                "name": table.display_name,
-                "source_type": table.source_type,
-                "row_count": table.row_count,
-                "column_count": len(table.columns),
-                "columns": [
-                    {"name": c.name, "type": c.data_type, "semantic_type": c.semantic_type}
-                    for c in table.columns
-                ],
-            })
+        datasets.append({
+            "table_name": table.table_name,
+            "name": table.display_name,
+            "source_type": table.source_type,
+            "row_count": table.row_count,
+            "column_count": len(table.columns),
+            "columns": [
+                {"name": c.name, "type": c.data_type, "semantic_type": c.semantic_type}
+                for c in table.columns
+            ],
+        })
 
     return {"datasets": datasets, "count": len(datasets)}
 
 
 @router.delete("/{table_name}")
-async def delete_dataset(table_name: str):
-    """Delete a dataset (DROP TABLE + unregister)."""
+async def delete_dataset(table_name: str, user: UserOut = Depends(get_current_user)):
+    """Delete a dataset (owned by current user)."""
     bootstrap = await _ensure_bootstrap()
 
-    # Check if table exists
-    if table_name not in bootstrap.registry.list_tables():
+    # Check if table exists and belongs to user
+    meta = bootstrap.registry._index.get(table_name)
+    if not meta:
         raise HTTPException(status_code=404, detail="Dataset not found")
+    if meta.get("user_id") and meta["user_id"] != user.id:
+        raise HTTPException(status_code=403, detail="Not your dataset")
 
     # Drop from DuckDB
     await bootstrap.dataset_manager.delete_dataset(table_name)

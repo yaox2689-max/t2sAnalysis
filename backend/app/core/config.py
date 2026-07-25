@@ -49,5 +49,10 @@ class Settings(BaseSettings):
     SQL_TIMEOUT: int = 10
     SQL_MAX_ROWS: int = 500
 
+    # ── Auth ────────────────────────────────────────────
+    JWT_SECRET_KEY: str = "change-me-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_MINUTES: int = 1440
+
 
 settings = Settings()

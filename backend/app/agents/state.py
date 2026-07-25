@@ -17,6 +17,7 @@ class AgentState(TypedDict):
 
     question: str
     session_id: Optional[str]
+    user_id: Optional[str]
     trace_id: Optional[str]
     history: list[dict]
 

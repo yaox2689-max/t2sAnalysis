@@ -91,7 +91,18 @@ class AppContext:
                 sql_generator=generator, schema_retriever=retriever_adapter,
             )
 
-            # 9. Build the Workflow graph (new path: registry + prompt_builder)
+            # 9. Executor Router (DuckDB + optional ExternalDB)
+            from app.tools.executor_router import ExecutorRouter
+            from app.tools.external_db_executor import ExternalDBExecutor
+            external_executor = ExternalDBExecutor(timeout=settings.SQL_TIMEOUT)
+            executor_router = ExecutorRouter(
+                duckdb_executor=executor,
+                registry=bootstrap.registry,
+                external_executor=external_executor,
+                connection_store=None,  # connections API uses bootstrap.registry directly
+            )
+
+            # 10. Build the Workflow graph (new path: registry + prompt_builder)
             from app.graph.graph import build_graph
             self.graph = build_graph(
                 analyzer=analyzer,
@@ -99,7 +110,7 @@ class AppContext:
                 prompt_builder=bootstrap.prompt_builder,
                 generator=generator,
                 validator=validator,
-                executor=executor,
+                executor=executor_router,
                 reflection=reflection,
             )
 

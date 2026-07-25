@@ -55,6 +55,7 @@ async def retrieve_schema_node(
     """
     question = state["question"]
     session_id = state.get("session_id")
+    user_id = state.get("user_id")
 
     # New path: DatasetRegistry + PromptBuilder
     if registry is not None and prompt_builder is not None:
@@ -63,7 +64,7 @@ async def retrieve_schema_node(
         registry: DatasetRegistry
         prompt_builder: PromptBuilder
 
-        catalog = registry.get_catalog(session_id=session_id, question=question, top_k=10)
+        catalog = registry.get_catalog(session_id=session_id, user_id=user_id, question=question, top_k=10)
         prompt_text = prompt_builder.build_prompt(catalog)
         available_tables = [t.table_name for t in catalog.tables]
 
@@ -125,9 +126,13 @@ async def execute_sql_node(
     On error, appends the error message to ``errors``.
     """
     sql = state.get("current_sql") or ""
+    session_id = state.get("session_id")
+    user_id = state.get("user_id")
     logger.info(_log(state, {"event": "execute_sql_start", "sql": sql[:200]}))
     try:
-        result: QueryResult = await executor.execute(sql)  # type: ignore[union-attr]
+        result: QueryResult = await executor.execute(  # type: ignore[union-attr]
+            sql, session_id=session_id, user_id=user_id,
+        )
         logger.info(_log(state, {
             "event": "execute_sql_success",
             "columns": result.columns,

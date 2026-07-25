@@ -85,19 +85,19 @@ def _format_result(result: QueryResult, label: str = "primary") -> str:
     rows = result.rows or []
     columns = result.columns or []
 
-    lines.append(f"[{label}] Rows: {len(rows)}, Columns: {', '.join(columns)}")
+    lines.append(f"[{label}] 行数: {len(rows)}, 列: {', '.join(columns)}")
 
     if rows:
-        lines.append(f"[{label}] Preview:")
+        lines.append(f"[{label}] 预览:")
         preview = rows[:_PREVIEW_MAX_ROWS]
         for row in preview:
             vals = ", ".join(f"{k}={v}" for k, v in row.items() if k in columns)
             lines.append(f"  {vals}")
 
         if len(rows) > _PREVIEW_MAX_ROWS:
-            lines.append(f"  ... and {len(rows) - _PREVIEW_MAX_ROWS} more rows")
+            lines.append(f"  ... 共 {len(rows)} 行，以上仅展示前 {_PREVIEW_MAX_ROWS} 行")
 
-        lines.append(f"[{label}] Statistics:")
+        lines.append(f"[{label}] 统计:")
         for col in columns:
             numeric_vals: list[float] = []
             for r in rows:
@@ -109,14 +109,14 @@ def _format_result(result: QueryResult, label: str = "primary") -> str:
                         pass
             if numeric_vals:
                 lines.append(
-                    f"  {col}: count={len(numeric_vals)}, "
-                    f"min={min(numeric_vals):.2f}, "
-                    f"max={max(numeric_vals):.2f}, "
-                    f"avg={sum(numeric_vals)/len(numeric_vals):.2f}"
+                    f"  {col}: 数量={len(numeric_vals)}, "
+                    f"最小={min(numeric_vals):.2f}, "
+                    f"最大={max(numeric_vals):.2f}, "
+                    f"均值={sum(numeric_vals)/len(numeric_vals):.2f}"
                 )
             else:
                 distinct = len({r.get(col) for r in rows if r.get(col) is not None})
-                lines.append(f"  {col}: {distinct} distinct values")
+                lines.append(f"  {col}: {distinct} 个不同值")
 
     return "\n".join(lines)
 
@@ -150,7 +150,7 @@ class EvidenceAnalyzer:
         if not primary_result.rows:
             return EvidenceReport(
                 conclusion="数据不足，无法分析",
-                limitations=["Primary result contains no data"],
+                limitations=["主查询结果无数据"],
             )
 
         user_msg = self._build_prompt(question, primary_result, comparison_result)
@@ -173,13 +173,13 @@ class EvidenceAnalyzer:
         comparison: Optional[QueryResult],
     ) -> str:
         """Build the user message for the LLM."""
-        parts = [f"## Question\n\n{question}"]
+        parts = [f"## 问题\n\n{question}"]
 
         parts.append(
-            "## Data\n\n" + _format_result(primary, label="primary")
+            "## 数据\n\n" + _format_result(primary, label="主数据")
         )
         if comparison and comparison.rows:
-            parts.append(_format_result(comparison, label="comparison"))
+            parts.append(_format_result(comparison, label="对比数据"))
 
         return "\n\n".join(parts)
 

@@ -5,9 +5,23 @@ const api = axios.create({
   timeout: 15000,
 });
 
+// Inject JWT token into every request
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("auth_token");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Handle 401 → redirect to login
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem("auth_token");
+      window.location.reload();
+    }
     console.error("API Error:", error);
     return Promise.reject(error);
   },
@@ -109,9 +123,12 @@ export function sendChatStream(
 
   (async () => {
     try {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
       const res = await fetch("/api/chat/stream", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(req),
         signal: controller.signal,
       });

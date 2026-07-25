@@ -1,17 +1,23 @@
 import React, { useState, useCallback } from "react";
-import { Layout, Menu } from "antd";
+import { Layout, Menu, Button } from "antd";
 import {
   MessageOutlined,
   HistoryOutlined,
   SettingOutlined,
+  LogoutOutlined,
+  DatabaseOutlined,
 } from "@ant-design/icons";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import Login from "./pages/Login";
 import Chat from "./pages/Chat";
 import History from "./pages/History";
 import SettingsPage from "./pages/Settings";
+import ConnectDatabase from "./pages/ConnectDatabase";
 
 const { Sider, Content } = Layout;
 
-const App: React.FC = () => {
+const AppLayout: React.FC = () => {
+  const { user, logout } = useAuth();
   const [currentPage, setCurrentPage] = useState("chat");
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(
     () => localStorage.getItem("session_id")
@@ -52,6 +58,8 @@ const App: React.FC = () => {
             refreshKey={refreshKey}
           />
         );
+      case "connections":
+        return <ConnectDatabase />;
       case "settings":
         return <SettingsPage />;
       default:
@@ -154,14 +162,15 @@ const App: React.FC = () => {
           items={[
             { key: "chat", icon: <MessageOutlined />, label: "对话分析" },
             { key: "history", icon: <HistoryOutlined />, label: "历史记录" },
+            { key: "connections", icon: <DatabaseOutlined />, label: "数据库连接" },
             { key: "settings", icon: <SettingOutlined />, label: "系统设置" },
           ]}
         />
 
-        {/* Footer */}
+        {/* Footer: user info + logout */}
         <div
           style={{
-            padding: "16px 24px",
+            padding: "12px 24px",
             borderTop: "1px solid #e5e8ef",
           }}
         >
@@ -169,26 +178,30 @@ const App: React.FC = () => {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 8,
+              justifyContent: "space-between",
             }}
           >
-            <div
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: "#52c41a",
-                boxShadow: "0 0 6px rgba(82, 196, 26, 0.4)",
-              }}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: "#52c41a",
+                  boxShadow: "0 0 6px rgba(82, 196, 26, 0.4)",
+                }}
+              />
+              <span style={{ fontSize: 12, color: "#64748b" }}>
+                {user?.display_name || user?.username}
+              </span>
+            </div>
+            <Button
+              type="text"
+              size="small"
+              icon={<LogoutOutlined />}
+              onClick={logout}
+              style={{ color: "#94a3b8" }}
             />
-            <span
-              style={{
-                fontSize: 12,
-                color: "#94a3b8",
-              }}
-            >
-              系统运行中
-            </span>
           </div>
         </div>
       </Sider>
@@ -207,6 +220,20 @@ const App: React.FC = () => {
       </Layout>
     </Layout>
   );
+};
+
+const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+};
+
+const AppContent: React.FC = () => {
+  const { isAuthenticated } = useAuth();
+  if (!isAuthenticated) return <Login />;
+  return <AppLayout />;
 };
 
 export default App;

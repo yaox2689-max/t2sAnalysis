@@ -12,14 +12,16 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from app.core.auth import get_current_user
 from app.core.config import settings
 from app.core.database import Database
 from app.core.deps import app_ctx
 from app.core.tracing import new_trace_id
+from app.services.auth_service import UserOut
 
 logger = logging.getLogger("t2s_analysis")
 
@@ -65,8 +67,11 @@ def _convert_decimals(rows: list[dict]) -> list[dict]:
     return result
 
 
-def _get_db() -> Database:
-    """Ensure database is initialised and return the global instance."""
+async def _get_db() -> Database:
+    """Ensure database is initialised (via bootstrap) and return the global instance."""
+    from app.bootstrap import bootstrap
+    if not bootstrap._initialized:
+        await bootstrap.run()
     from app.core.database import db
     if not db.is_initialized:
         db.init()
@@ -108,31 +113,39 @@ class ChatResponse(BaseModel):
 
 
 @router.post("/sessions")
-async def create_session():
+async def create_session(user: UserOut = Depends(get_current_user)):
     """Create a new chat session."""
-    db = _get_db()
+    db = await _get_db()
     session_id = f"ses_{uuid.uuid4().hex[:12]}"
     await db.execute(
-        "INSERT INTO sessions (id, title) VALUES (:id, :title)",
-        {"id": session_id, "title": "新对话"},
+        "INSERT INTO sessions (id, title, user_id) VALUES (:id, :title, :uid)",
+        {"id": session_id, "title": "新对话", "uid": user.id},
     )
     return {"session_id": session_id}
 
 
 @router.get("/sessions")
-async def list_sessions():
-    """List all sessions, newest first."""
-    db = _get_db()
+async def list_sessions(user: UserOut = Depends(get_current_user)):
+    """List all sessions for the current user, newest first."""
+    db = await _get_db()
     rows = await db.execute(
-        "SELECT id, title, created_at, updated_at FROM sessions ORDER BY updated_at DESC"
+        "SELECT id, title, created_at, updated_at FROM sessions "
+        "WHERE user_id = :uid ORDER BY updated_at DESC",
+        {"uid": user.id},
     )
     return {"sessions": rows}
 
 
 @router.get("/sessions/{session_id}")
-async def get_session(session_id: str):
-    """Get all messages for a session."""
-    db = _get_db()
+async def get_session(session_id: str, user: UserOut = Depends(get_current_user)):
+    """Get all messages for a session (owned by current user)."""
+    db = await _get_db()
+    sess = await db.execute(
+        "SELECT id FROM sessions WHERE id = :sid AND user_id = :uid",
+        {"sid": session_id, "uid": user.id},
+    )
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
     rows = await db.execute(
         "SELECT id, role, content, sql_text, chart_type, echarts_option, "
         "insight, `columns`, rows_data, evidence, elapsed_ms, created_at "
@@ -150,9 +163,15 @@ async def get_session(session_id: str):
 
 
 @router.delete("/sessions/{session_id}")
-async def delete_session(session_id: str):
-    """Delete a session and all its messages."""
-    db = _get_db()
+async def delete_session(session_id: str, user: UserOut = Depends(get_current_user)):
+    """Delete a session and all its messages (owned by current user)."""
+    db = await _get_db()
+    sess = await db.execute(
+        "SELECT id FROM sessions WHERE id = :sid AND user_id = :uid",
+        {"sid": session_id, "uid": user.id},
+    )
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
     await db.execute(
         "DELETE FROM messages WHERE session_id = :sid", {"sid": session_id}
     )
@@ -166,7 +185,7 @@ async def delete_session(session_id: str):
 
 
 @router.post("/chat")
-async def chat(request: ChatRequest) -> ChatResponse:
+async def chat(request: ChatRequest, user: UserOut = Depends(get_current_user)) -> ChatResponse:
     """Receive a business question → run the agent → return structured answer.
 
     Persists both the user question and the assistant response in the
@@ -174,10 +193,11 @@ async def chat(request: ChatRequest) -> ChatResponse:
     """
     ctx = await app_ctx.ensure_initialized()
 
-    # 1. Verify session exists and save user message
-    db = _get_db()
+    # 1. Verify session exists and belongs to user
+    db = await _get_db()
     sess = await db.execute(
-        "SELECT id FROM sessions WHERE id = :sid", {"sid": request.session_id}
+        "SELECT id FROM sessions WHERE id = :sid AND user_id = :uid",
+        {"sid": request.session_id, "uid": user.id},
     )
     if not sess:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -201,6 +221,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         state = await ctx.graph.ainvoke({
             "question": request.question,
             "session_id": request.session_id,
+            "user_id": user.id,
             "trace_id": trace_id,
             "history": history,
             "retry_count": 0,
@@ -368,13 +389,14 @@ _NODE_LABELS: dict[str, str] = {
 
 
 @router.post("/chat/stream")
-async def chat_stream(request: ChatRequest):
+async def chat_stream(request: ChatRequest, user: UserOut = Depends(get_current_user)):
     """SSE endpoint that streams progress events during workflow execution."""
     ctx = await app_ctx.ensure_initialized()
-    db = _get_db()
+    db = await _get_db()
 
     sess = await db.execute(
-        "SELECT id FROM sessions WHERE id = :sid", {"sid": request.session_id}
+        "SELECT id FROM sessions WHERE id = :sid AND user_id = :uid",
+        {"sid": request.session_id, "uid": user.id},
     )
     if not sess:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -397,6 +419,7 @@ async def chat_stream(request: ChatRequest):
         initial_state = {
             "question": request.question,
             "session_id": request.session_id,
+            "user_id": user.id,
             "trace_id": trace_id,
             "history": history,
             "retry_count": 0,

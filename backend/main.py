@@ -53,9 +53,13 @@ app.add_middleware(
 )
 
 # ── Routes ─────────────────────────────────────────────
+from app.api.auth import router as auth_router  # noqa: E402
 from app.api.chat import router as chat_router  # noqa: E402
+from app.api.connections import router as connections_router  # noqa: E402
 from app.api.datasets import router as datasets_router  # noqa: E402
+app.include_router(auth_router)
 app.include_router(chat_router)
+app.include_router(connections_router)
 app.include_router(datasets_router)
 
 

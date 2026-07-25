@@ -50,6 +50,7 @@ class DatasetInfo:
     columns_meta: list[dict]  # [{"name": "col1", "original_name": "原始名", "type": "VARCHAR"}, ...]
     original_file: str
     file_size_bytes: int
+    user_id: Optional[str] = None
     sheet_name: Optional[str] = None
     profile_meta: Optional[dict] = None
 
@@ -74,6 +75,7 @@ class DatasetManager:
         file_path: str,
         session_id: str,
         display_name: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> list[DatasetInfo]:
         """Import a file into DuckDB. Auto-detects format.
 
@@ -96,6 +98,7 @@ class DatasetManager:
 
         # Post-import: generate profile, persist to MySQL, register
         for ds in datasets:
+            ds.user_id = user_id
             ds.status = "uploading"
             ds.profile_meta = self._generate_profile(ds.table_name)
             ds.status = "ready"
@@ -108,6 +111,7 @@ class DatasetManager:
                     display_name=ds.name,
                     source_type=ds.source_type,
                     session_id=ds.session_id,
+                    user_id=ds.user_id,
                     columns_meta=ds.columns_meta,
                 )
 
@@ -336,9 +340,9 @@ class DatasetManager:
         try:
             await self._db.execute(
                 "INSERT INTO datasets "
-                "(id, name, source_type, status, table_name, session_id, "
+                "(id, name, source_type, status, table_name, session_id, user_id, "
                 "row_count, column_count, columns_meta, profile_meta, original_file, file_size_bytes) "
-                "VALUES (:id, :name, :source_type, :status, :table_name, :session_id, "
+                "VALUES (:id, :name, :source_type, :status, :table_name, :session_id, :user_id, "
                 ":row_count, :column_count, :columns_meta, :profile_meta, :original_file, :file_size_bytes)",
                 {
                     "id": ds.id,
@@ -347,6 +351,7 @@ class DatasetManager:
                     "status": ds.status,
                     "table_name": ds.table_name,
                     "session_id": ds.session_id,
+                    "user_id": ds.user_id,
                     "row_count": ds.row_count,
                     "column_count": ds.column_count,
                     "columns_meta": json.dumps(ds.columns_meta, ensure_ascii=False),
