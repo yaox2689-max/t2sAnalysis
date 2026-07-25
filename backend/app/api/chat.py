@@ -13,6 +13,7 @@ from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.core.config import settings
@@ -98,6 +99,7 @@ class ChatResponse(BaseModel):
     chart_type: str = ""
     echarts_option: dict = {}
     insight: str = ""
+    evidence: Optional[dict] = None
     elapsed_ms: float = 0.0
     error: Optional[str] = None
 
@@ -133,12 +135,12 @@ async def get_session(session_id: str):
     db = _get_db()
     rows = await db.execute(
         "SELECT id, role, content, sql_text, chart_type, echarts_option, "
-        "insight, `columns`, rows_data, elapsed_ms, created_at "
+        "insight, `columns`, rows_data, evidence, elapsed_ms, created_at "
         "FROM messages WHERE session_id = :sid ORDER BY id ASC",
         {"sid": session_id},
     )
     for r in rows:
-        for col in ("columns", "rows_data", "echarts_option"):
+        for col in ("columns", "rows_data", "echarts_option", "evidence"):
             if r.get(col) and isinstance(r[col], str):
                 try:
                     r[col] = json.loads(r[col])
@@ -180,9 +182,19 @@ async def chat(request: ChatRequest) -> ChatResponse:
     if not sess:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    # 2. Load recent conversation history for multi-turn context
+    history_rows = await db.execute(
+        "SELECT role, content FROM messages "
+        "WHERE session_id = :sid AND role IN ('user', 'assistant') "
+        "ORDER BY id DESC LIMIT 20",
+        {"sid": request.session_id},
+    )
+    history_rows.reverse()  # chronological order
+    history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
+
     start = time.perf_counter()
 
-    # 2. Run the LangGraph Workflow
+    # 3. Run the LangGraph Workflow
     trace_id = new_trace_id()
     logger.info({"event": "chat_start", "trace_id": trace_id, "session_id": request.session_id})
     try:
@@ -190,7 +202,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
             "question": request.question,
             "session_id": request.session_id,
             "trace_id": trace_id,
-            "history": [],
+            "history": history,
             "retry_count": 0,
             "max_retries": 3,
             "errors": [],
@@ -215,7 +227,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     elapsed_ms = (time.perf_counter() - start) * 1000
 
-    # 3. Extract results
+    # 4. Extract results
     generated_sql = state.get("generated_sql")
     sql = generated_sql.sql if generated_sql else ""
 
@@ -249,7 +261,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
             error="No data returned",
         )
 
-    # 4. Run Chart Tool
+    # 5. Run Chart Tool
     task_plan = state.get("task_plan")
     chart_option = None
     chart_type = ""
@@ -258,7 +270,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         chart_type = chart_result.chart_type
         chart_option = chart_result.echarts_option
 
-    # 5. Run Insight Tool
+    # 6. Run Insight Tool
     insight_text = ""
     if ctx.insight_tool and query_result:
         try:
@@ -269,14 +281,33 @@ async def chat(request: ChatRequest) -> ChatResponse:
         except Exception:
             insight_text = ""
 
-    # 6. Save user message
+    # 6.5 Run Evidence Analyzer
+    evidence_data = None
+    if ctx.evidence_analyzer and query_result:
+        try:
+            evidence_report = await ctx.evidence_analyzer.analyze(
+                request.question, query_result,
+            )
+            evidence_data = {
+                "conclusion": evidence_report.conclusion,
+                "evidence_chain": [
+                    {"claim": e.claim, "data": e.data, "source": e.source, "strength": e.strength}
+                    for e in evidence_report.evidence_chain
+                ],
+                "suggestions": evidence_report.suggestions,
+                "limitations": evidence_report.limitations,
+            }
+        except Exception:
+            evidence_data = None
+
+    # 7. Save user message
     await db.execute(
         "INSERT INTO messages (session_id, role, content, elapsed_ms) "
         "VALUES (:sid, 'user', :content, 0)",
         {"sid": request.session_id, "content": request.question},
     )
 
-    # 7. Save assistant message with all structured data
+    # 8. Save assistant message with all structured data
     msg_args = {
         "sid": request.session_id,
         "content": insight_text or "查询完成",
@@ -286,17 +317,18 @@ async def chat(request: ChatRequest) -> ChatResponse:
         "insight": insight_text,
         "columns": json.dumps(columns, ensure_ascii=False, cls=_SafeEncoder) if columns else None,
         "rows": json.dumps(rows, ensure_ascii=False, cls=_SafeEncoder) if rows else None,
+        "evidence": json.dumps(evidence_data, ensure_ascii=False, cls=_SafeEncoder) if evidence_data else None,
         "elapsed": round(elapsed_ms, 2),
     }
     message_id = await db.execute_insert(
         "INSERT INTO messages (session_id, role, content, sql_text, chart_type, "
-        "echarts_option, insight, `columns`, rows_data, elapsed_ms) "
+        "echarts_option, insight, `columns`, rows_data, evidence, elapsed_ms) "
         "VALUES (:sid, 'assistant', :content, :sql, :chart_type, "
-        ":echarts, :insight, :columns, :rows, :elapsed)",
+        ":echarts, :insight, :columns, :rows, :evidence, :elapsed)",
         msg_args,
     )
 
-    # 8. Update session title (first message only)
+    # 9. Update session title (first message only)
     sess_check = await db.execute(
         "SELECT COUNT(*) AS cnt FROM messages WHERE session_id = :sid AND role = 'user'",
         {"sid": request.session_id},
@@ -317,5 +349,203 @@ async def chat(request: ChatRequest) -> ChatResponse:
         chart_type=chart_type,
         echarts_option=chart_option or {},
         insight=insight_text,
+        evidence=evidence_data,
         elapsed_ms=round(elapsed_ms, 2),
+    )
+
+
+# ── SSE Streaming ─────────────────────────────────────
+
+# Node display names for progress events
+_NODE_LABELS: dict[str, str] = {
+    "analyze": "分析任务",
+    "retrieve": "检索数据结构",
+    "generate": "生成SQL",
+    "validate": "校验SQL",
+    "execute": "执行查询",
+    "reflect": "反思优化",
+}
+
+
+@router.post("/chat/stream")
+async def chat_stream(request: ChatRequest):
+    """SSE endpoint that streams progress events during workflow execution."""
+    ctx = await app_ctx.ensure_initialized()
+    db = _get_db()
+
+    sess = await db.execute(
+        "SELECT id FROM sessions WHERE id = :sid", {"sid": request.session_id}
+    )
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Load conversation history
+    history_rows = await db.execute(
+        "SELECT role, content FROM messages "
+        "WHERE session_id = :sid AND role IN ('user', 'assistant') "
+        "ORDER BY id DESC LIMIT 20",
+        {"sid": request.session_id},
+    )
+    history_rows.reverse()
+    history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
+
+    async def event_generator():
+        trace_id = new_trace_id()
+        start = time.perf_counter()
+        logger.info({"event": "chat_stream_start", "trace_id": trace_id, "session_id": request.session_id})
+
+        initial_state = {
+            "question": request.question,
+            "session_id": request.session_id,
+            "trace_id": trace_id,
+            "history": history,
+            "retry_count": 0,
+            "max_retries": 3,
+            "errors": [],
+        }
+
+        final_state = None
+        try:
+            async for event in ctx.graph.astream(initial_state, stream_mode="updates"):
+                for node_name, update in event.items():
+                    label = _NODE_LABELS.get(node_name, node_name)
+                    progress = {"type": "progress", "node": node_name, "label": label}
+                    if node_name == "analyze" and update.get("task_plan"):
+                        progress["task_type"] = update["task_plan"].task_type
+                    elif node_name == "execute":
+                        qr = update.get("query_result")
+                        progress["row_count"] = qr.row_count if qr else 0
+                    yield f"data: {json.dumps(progress, ensure_ascii=False, cls=_SafeEncoder)}\n\n"
+
+                    if final_state is None:
+                        final_state = dict(initial_state)
+                    final_state.update(update)
+        except Exception as exc:
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            logger.error({"event": "chat_stream_error", "error": str(exc)})
+            yield f'data: {json.dumps({"type": "error", "message": "处理失败，请稍后重试"}, ensure_ascii=False)}\n\n'
+            return
+
+        elapsed_ms = (time.perf_counter() - start) * 1000
+
+        if not final_state:
+            yield f'data: {json.dumps({"type": "error", "message": "处理失败"}, ensure_ascii=False)}\n\n'
+            return
+
+        # Extract results
+        generated_sql = final_state.get("generated_sql")
+        sql = generated_sql.sql if generated_sql else ""
+        query_result = final_state.get("query_result")
+        columns = query_result.columns if query_result else []
+        rows = query_result.rows if query_result else []
+
+        if not rows and not sql:
+            await db.execute(
+                "INSERT INTO messages (session_id, role, content, elapsed_ms) "
+                "VALUES (:sid, 'user', :content, 0)",
+                {"sid": request.session_id, "content": request.question},
+            )
+            yield f'data: {json.dumps({"type": "error", "message": "No data returned", "elapsed_ms": round(elapsed_ms, 2)}, ensure_ascii=False, cls=_SafeEncoder)}\n\n'
+            return
+
+        # Post-workflow tools
+        task_plan = final_state.get("task_plan")
+        chart_option = None
+        chart_type = ""
+        if ctx.chart_tool and query_result:
+            chart_result = ctx.chart_tool.render(query_result, task_plan)
+            chart_type = chart_result.chart_type
+            chart_option = chart_result.echarts_option
+
+        insight_text = ""
+        if ctx.insight_tool and query_result:
+            try:
+                insight_result = await ctx.insight_tool.summarize(
+                    query_result, request.question, chart_type=chart_type,
+                )
+                insight_text = insight_result.summary
+            except Exception:
+                insight_text = ""
+
+        evidence_data = None
+        if ctx.evidence_analyzer and query_result:
+            try:
+                evidence_report = await ctx.evidence_analyzer.analyze(
+                    request.question, query_result,
+                )
+                evidence_data = {
+                    "conclusion": evidence_report.conclusion,
+                    "evidence_chain": [
+                        {"claim": e.claim, "data": e.data, "source": e.source, "strength": e.strength}
+                        for e in evidence_report.evidence_chain
+                    ],
+                    "suggestions": evidence_report.suggestions,
+                    "limitations": evidence_report.limitations,
+                }
+            except Exception:
+                evidence_data = None
+
+        # Save messages
+        await db.execute(
+            "INSERT INTO messages (session_id, role, content, elapsed_ms) "
+            "VALUES (:sid, 'user', :content, 0)",
+            {"sid": request.session_id, "content": request.question},
+        )
+
+        msg_args = {
+            "sid": request.session_id,
+            "content": insight_text or "查询完成",
+            "sql": sql,
+            "chart_type": chart_type,
+            "echarts": json.dumps(chart_option, ensure_ascii=False, cls=_SafeEncoder) if chart_option else None,
+            "insight": insight_text,
+            "columns": json.dumps(columns, ensure_ascii=False, cls=_SafeEncoder) if columns else None,
+            "rows": json.dumps(rows, ensure_ascii=False, cls=_SafeEncoder) if rows else None,
+            "evidence": json.dumps(evidence_data, ensure_ascii=False, cls=_SafeEncoder) if evidence_data else None,
+            "elapsed": round(elapsed_ms, 2),
+        }
+        message_id = await db.execute_insert(
+            "INSERT INTO messages (session_id, role, content, sql_text, chart_type, "
+            "echarts_option, insight, `columns`, rows_data, evidence, elapsed_ms) "
+            "VALUES (:sid, 'assistant', :content, :sql, :chart_type, "
+            ":echarts, :insight, :columns, :rows, :evidence, :elapsed)",
+            msg_args,
+        )
+
+        # Update session title (first message only)
+        sess_check = await db.execute(
+            "SELECT COUNT(*) AS cnt FROM messages WHERE session_id = :sid AND role = 'user'",
+            {"sid": request.session_id},
+        )
+        if sess_check and sess_check[0]["cnt"] == 1:
+            title = request.question[:60] + ("..." if len(request.question) > 60 else "")
+            await db.execute(
+                "UPDATE sessions SET title = :title WHERE id = :sid",
+                {"title": title, "sid": request.session_id},
+            )
+
+        # Yield final result
+        result_payload = {
+            "type": "result",
+            "message_id": message_id,
+            "session_id": request.session_id,
+            "sql": sql,
+            "columns": columns,
+            "rows": _convert_decimals(rows),
+            "chart_type": chart_type,
+            "echarts_option": chart_option or {},
+            "insight": insight_text,
+            "evidence": evidence_data,
+            "elapsed_ms": round(elapsed_ms, 2),
+        }
+        yield f"data: {json.dumps(result_payload, ensure_ascii=False, cls=_SafeEncoder)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )

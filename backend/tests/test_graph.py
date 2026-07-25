@@ -60,6 +60,25 @@ class FakeRetriever:
         return SAMPLE_SCHEMA
 
 
+class FakeRegistry:
+    """Mimics DatasetRegistry.get_catalog() returning a Catalog."""
+    def get_catalog(self, session_id=None, top_k=10, question=None):
+        from app.services.dataset_registry import Catalog, TableSchema, ColumnSchema
+        return Catalog(tables=[
+            TableSchema(
+                table_name="orders",
+                display_name="orders",
+                source_type="csv",
+                columns=[ColumnSchema(name="id", data_type="int", semantic_type="identifier")],
+            )
+        ])
+
+
+class FakePromptBuilder:
+    def build_prompt(self, catalog):
+        return "SELECT * FROM orders"
+
+
 class FakeGenerator:
     async def generate(self, plan, schema, prompt_text=None, question=None):
         return SAMPLE_SQL
@@ -154,8 +173,9 @@ class TestNodes:
 
     @pytest.mark.asyncio
     async def test_retrieve_schema_node(self):
-        result = await retrieve_schema_node(BASE_STATE, retriever=FakeRetriever())
+        result = await retrieve_schema_node(BASE_STATE, registry=FakeRegistry(), prompt_builder=FakePromptBuilder())
         assert "orders" in result["schema_context"].tables
+        assert result["prompt_text"] is not None
 
     @pytest.mark.asyncio
     async def test_generate_sql_node(self):
@@ -200,7 +220,8 @@ class TestNodes:
 def graph():
     return build_graph(
         analyzer=FakeAnalyzer(),
-        retriever=FakeRetriever(),
+        registry=FakeRegistry(),
+        prompt_builder=FakePromptBuilder(),
         generator=FakeGenerator(),
         validator=FakeValidator(),
         executor=FakeExecutor(),
@@ -231,7 +252,8 @@ async def test_graph_validation_failure_leads_to_reflection():
     """Validator fails → reflection node runs."""
     g = build_graph(
         analyzer=FakeAnalyzer(),
-        retriever=FakeRetriever(),
+        registry=FakeRegistry(),
+        prompt_builder=FakePromptBuilder(),
         generator=FakeGenerator(),
         validator=FakeValidatorFails(),
         executor=FakeExecutor(),
@@ -254,7 +276,8 @@ async def test_graph_execution_failure_leads_to_reflection():
     """Executor fails → reflection node runs."""
     g = build_graph(
         analyzer=FakeAnalyzer(),
-        retriever=FakeRetriever(),
+        registry=FakeRegistry(),
+        prompt_builder=FakePromptBuilder(),
         generator=FakeGenerator(),
         validator=FakeValidator(),
         executor=FakeExecutorFails(),
@@ -276,7 +299,8 @@ async def test_graph_retry_retrieve_reruns_retrieve_and_generate():
     """reflection next_action=retry_retrieve → retrieve → generate → validate → execute."""
     g = build_graph(
         analyzer=FakeAnalyzer(),
-        retriever=FakeRetriever(),
+        registry=FakeRegistry(),
+        prompt_builder=FakePromptBuilder(),
         generator=FakeGenerator(),
         validator=FakeValidator(),
         executor=FakeExecutor(),

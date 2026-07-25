@@ -29,12 +29,10 @@ async def lifespan(_app: FastAPI):
 
     logger.info({"event": "app_start", "version": settings.APP_VERSION})
     yield
-    # Clean up database and redis connections on shutdown
+    # Clean up database connections on shutdown
     from app.core.database import db
     if db.is_initialized:
         await db.close()
-    from app.core.redis import redis_client
-    await redis_client.close()
     logger.info({"event": "app_shutdown"})
 
 

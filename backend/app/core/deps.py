@@ -22,6 +22,7 @@ from langgraph.graph.state import CompiledStateGraph
 from app.core.config import settings
 from app.core.database import Database
 from app.tools.chart import ChartTool
+from app.tools.evidence_analyzer import EvidenceAnalyzer
 from app.tools.insight import InsightTool
 
 logger = logging.getLogger("t2s_analysis")
@@ -34,6 +35,7 @@ class AppContext:
         self.graph: Optional[CompiledStateGraph] = None
         self.chart_tool: Optional[ChartTool] = None
         self.insight_tool: Optional[InsightTool] = None
+        self.evidence_analyzer: Optional[EvidenceAnalyzer] = None
         self._initialized: bool = False
         self._lock: asyncio.Lock = asyncio.Lock()
 
@@ -104,6 +106,7 @@ class AppContext:
             # 10. Tools
             self.chart_tool = ChartTool()
             self.insight_tool = InsightTool(api_key=api_key, model=model, base_url=base_url)
+            self.evidence_analyzer = EvidenceAnalyzer(api_key=api_key, model=model, base_url=base_url)
 
             self._initialized = True
             logger.info({"event": "app_init_complete"})

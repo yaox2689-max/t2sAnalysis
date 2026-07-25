@@ -40,12 +40,6 @@ class Settings(BaseSettings):
     DB_POOL_TIMEOUT: int = 30
     DB_POOL_RECYCLE: int = 1800
 
-    # ── Redis ────────────────────────────────────────────
-    REDIS_HOST: str = "localhost"
-    REDIS_PORT: int = 6379
-    REDIS_DB: int = 0
-    REDIS_MAX_CONNECTIONS: int = 10
-
     # ── LLM ──────────────────────────────────────────────
     LLM_API_KEY: str = ""
     LLM_MODEL: str = "deepseek-v4-pro"

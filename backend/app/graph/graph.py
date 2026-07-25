@@ -6,7 +6,7 @@ nodes and edges — no business logic lives here.
 Usage:
     from app.graph.graph import build_graph
 
-    graph = build_graph(analyzer=..., retriever=..., ...)
+    graph = build_graph(analyzer=..., registry=..., ...)
     result = await graph.ainvoke({"question": "销售额趋势", "max_retries": 3})
 """
 
@@ -44,7 +44,6 @@ def _async_partial(fn, **kwargs):
 
 def build_graph(
     analyzer: object,
-    retriever: object = None,
     registry: object = None,
     prompt_builder: object = None,
     generator: object = None,
@@ -54,8 +53,7 @@ def build_graph(
 ) -> StateGraph:
     """Build and compile the SQL Agent workflow graph.
 
-    New path: pass registry + prompt_builder (DuckDB + Catalog).
-    Legacy path: pass retriever (SchemaRetriever + MySQL).
+    Uses registry + prompt_builder (DuckDB + Catalog) for schema retrieval.
     """
     workflow = StateGraph(AgentState)
 
@@ -63,7 +61,6 @@ def build_graph(
     workflow.add_node("analyze", _async_partial(analyze_task_node, analyzer=analyzer))
     workflow.add_node("retrieve", _async_partial(
         retrieve_schema_node,
-        retriever=retriever,
         registry=registry,
         prompt_builder=prompt_builder,
     ))

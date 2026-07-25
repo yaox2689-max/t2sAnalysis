@@ -45,16 +45,13 @@ async def analyze_task_node(
 
 async def retrieve_schema_node(
     state: AgentState,
-    retriever: object = None,
     registry: object = None,
     prompt_builder: object = None,
 ) -> dict:
     """Build schema context and prompt text for SQL generation.
 
-    New path (registry + prompt_builder):
-        Catalog → PromptBuilder → prompt_text
-    Legacy path (retriever):
-        SchemaRetriever → schema_context
+    Uses DatasetRegistry + PromptBuilder to produce a comprehensive
+    prompt with table schemas, column profiles, and sample rows.
     """
     question = state["question"]
     session_id = state.get("session_id")
@@ -79,10 +76,6 @@ async def retrieve_schema_node(
             },
         )
         return {"schema_context": schema_ctx, "prompt_text": prompt_text}
-
-    # Legacy path: SchemaRetriever
-    ctx: SchemaContext = await retriever.retrieve(question)  # type: ignore[union-attr]
-    return {"schema_context": ctx}
 
 
 async def generate_sql_node(
@@ -127,7 +120,7 @@ async def execute_sql_node(
     state: AgentState,
     executor: object,
 ) -> dict:
-    """Call SafeExecutor and write ``query_result`` into state.
+    """Call DuckDBExecutor and write ``query_result`` into state.
 
     On error, appends the error message to ``errors``.
     """
