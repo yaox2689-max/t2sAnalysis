@@ -45,6 +45,7 @@ class Bootstrap:
         # 2. Init MySQL (business metadata)
         from app.core.database import db
         db.init()
+        await self._ensure_users_table(db)
         await self._ensure_datasets_table(db)
         await self._ensure_chat_tables(db)
 
@@ -76,6 +77,23 @@ class Bootstrap:
 
         self._initialized = True
 
+    async def _ensure_users_table(self, db: object) -> None:
+        """Create users table in MySQL if it doesn't exist."""
+        users_ddl = (
+            "CREATE TABLE IF NOT EXISTS users ("
+            "  id VARCHAR(36) PRIMARY KEY,"
+            "  username VARCHAR(64) NOT NULL UNIQUE,"
+            "  password_hash VARCHAR(255) NOT NULL,"
+            "  display_name VARCHAR(128),"
+            "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP"
+            ")"
+        )
+        try:
+            await db.execute(users_ddl)
+            logger.info({"event": "users_table_ready"})
+        except Exception as exc:
+            logger.warning({"event": "users_table_exists", "detail": str(exc)[:100]})
+
     async def _ensure_datasets_table(self, db: object) -> None:
         """Create datasets table in MySQL if it doesn't exist."""
         sql_path = os.path.join(
@@ -89,6 +107,16 @@ class Bootstrap:
                 logger.info({"event": "datasets_table_ready"})
             except Exception as exc:
                 logger.warning({"event": "datasets_table_exists", "detail": str(exc)[:100]})
+
+        # Migrate: add user_id to datasets
+        try:
+            await db.execute("ALTER TABLE datasets ADD COLUMN user_id VARCHAR(36)")
+        except Exception:
+            pass
+        try:
+            await db.execute("CREATE INDEX idx_datasets_user ON datasets (user_id)")
+        except Exception:
+            pass
 
     async def _ensure_chat_tables(self, db: object) -> None:
         """Create sessions and messages tables in MySQL if they don't exist."""
@@ -131,13 +159,44 @@ class Bootstrap:
         except Exception:
             pass  # column already exists
 
+        # Migrate: add user_id to sessions
+        try:
+            await db.execute("ALTER TABLE sessions ADD COLUMN user_id VARCHAR(36)")
+        except Exception:
+            pass
+        try:
+            await db.execute("CREATE INDEX idx_sessions_user ON sessions (user_id)")
+        except Exception:
+            pass
+
+        # Create mysql_connections table
+        connections_ddl = (
+            "CREATE TABLE IF NOT EXISTS mysql_connections ("
+            "  id VARCHAR(36) PRIMARY KEY,"
+            "  user_id VARCHAR(36) NOT NULL,"
+            "  display_name VARCHAR(128),"
+            "  host VARCHAR(255) NOT NULL,"
+            "  port INT DEFAULT 3306,"
+            "  `database` VARCHAR(128) NOT NULL,"
+            "  username VARCHAR(128) NOT NULL,"
+            "  encrypted_password VARCHAR(512) NOT NULL,"
+            "  status VARCHAR(32) DEFAULT 'active',"
+            "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
+            "  INDEX idx_conn_user (user_id)"
+            ")"
+        )
+        try:
+            await db.execute(connections_ddl)
+        except Exception:
+            pass
+
     async def _load_datasets_from_mysql(self, db: object, duckdb_engine: object) -> None:
         """Load dataset metadata from MySQL into the registry."""
         import json as _json
 
         try:
             rows = await db.execute(
-                "SELECT id, name, source_type, status, table_name, session_id, "
+                "SELECT id, name, source_type, status, table_name, session_id, user_id, "
                 "row_count, column_count, columns_meta, profile_meta "
                 "FROM datasets WHERE status = 'ready'"
             )
@@ -165,6 +224,7 @@ class Bootstrap:
                 display_name=row["name"],
                 source_type=row["source_type"],
                 session_id=row.get("session_id"),
+                user_id=row.get("user_id"),
                 columns_meta=columns_meta or [],
             )
             loaded += 1

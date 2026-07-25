@@ -35,6 +35,7 @@ SAMPLE_RESULT = QueryResult(columns=["id"], rows=[{"id": 1}])
 BASE_STATE: AgentState = {
     "question": "test",
     "session_id": None,
+    "user_id": None,
     "history": [],
     "task_plan": SAMPLE_PLAN,
     "schema_context": SAMPLE_SCHEMA,
@@ -62,7 +63,7 @@ class FakeRetriever:
 
 class FakeRegistry:
     """Mimics DatasetRegistry.get_catalog() returning a Catalog."""
-    def get_catalog(self, session_id=None, top_k=10, question=None):
+    def get_catalog(self, session_id=None, user_id=None, top_k=10, question=None):
         from app.services.dataset_registry import Catalog, TableSchema, ColumnSchema
         return Catalog(tables=[
             TableSchema(
@@ -95,12 +96,12 @@ class FakeValidatorFails(FakeValidator):
 
 
 class FakeExecutor:
-    async def execute(self, sql: str):
+    async def execute(self, sql: str, **kwargs):
         return SAMPLE_RESULT
 
 
 class FakeExecutorFails(FakeExecutor):
-    async def execute(self, sql: str):
+    async def execute(self, sql: str, **kwargs):
         raise Exception("Table not found")
 
 
