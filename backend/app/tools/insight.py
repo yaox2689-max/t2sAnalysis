@@ -17,14 +17,9 @@ Usage:
 import json
 from typing import Optional
 
-import httpx
-from openai import AsyncOpenAI
-
 from app.core.prompt_loader import prompt_loader
+from app.core.utils import create_llm_client, format_query_result
 from app.models.query import QueryResult
-
-_PREVIEW_MAX_ROWS = 20
-_LLM_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 
 
 class InsightResult:
@@ -49,57 +44,8 @@ def _load_prompt() -> str:
 
 
 def _format_result(result: QueryResult) -> str:
-    """Format a QueryResult into a compact text summary for the LLM.
-
-    Includes:
-    - Column names
-    - Row count
-    - Preview (first N rows)
-    - Per-column statistics (min, max, avg, count)
-    """
-    lines: list[str] = []
-    rows = result.rows or []
-    columns = result.columns or []
-
-    lines.append(f"Rows: {len(rows)}")
-    lines.append(f"Columns: {', '.join(columns)}")
-
-    # Preview
-    if rows:
-        lines.append("\nPreview:")
-        preview = rows[:_PREVIEW_MAX_ROWS]
-        for row in preview:
-            vals = ", ".join(
-                f"{k}={v}" for k, v in row.items() if k in columns
-            )
-            lines.append(f"  {vals}")
-
-        if len(rows) > _PREVIEW_MAX_ROWS:
-            lines.append(f"  ... and {len(rows) - _PREVIEW_MAX_ROWS} more rows")
-
-    # Statistics per numeric column
-    lines.append("\nStatistics:")
-    for col in columns:
-        vals: list[float] = []
-        for r in rows:
-            v = r.get(col)
-            if v is not None:
-                try:
-                    vals.append(float(v))
-                except (ValueError, TypeError):
-                    pass
-        if vals:
-            lines.append(
-                f"  {col}: count={len(vals)}, "
-                f"min={min(vals):.2f}, max={max(vals):.2f}, "
-                f"avg={sum(vals)/len(vals):.2f}"
-            )
-        else:
-            # Non-numeric: show distinct count
-            distinct = len({r.get(col) for r in rows if r.get(col) is not None})
-            lines.append(f"  {col}: non-numeric, {distinct} distinct values")
-
-    return "\n".join(lines)
+    """Format a QueryResult into a compact text summary for the LLM."""
+    return format_query_result(result, lang="en")
 
 
 # ── Tool ─────────────────────────────────────────────────
@@ -115,10 +61,7 @@ class InsightTool:
         base_url: Optional[str] = None,
         http_client: Optional[object] = None,
     ) -> None:
-        kwargs = {"api_key": api_key, "base_url": base_url, "timeout": _LLM_TIMEOUT}
-        if http_client is not None:
-            kwargs["http_client"] = http_client
-        self._client = AsyncOpenAI(**kwargs)
+        self._client = create_llm_client(api_key, base_url, http_client=http_client)
         self._model = model
         self._prompt = _load_prompt()
 

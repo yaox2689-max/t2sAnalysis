@@ -1,6 +1,5 @@
 """Tests for LangGraph Workflow — state, nodes, routers, and full graph."""
 import pytest
-from langgraph.graph import StateGraph
 
 from app.agents.state import AgentState
 from app.graph.graph import build_graph
@@ -20,7 +19,6 @@ from app.graph.routers import (
 from app.models.query import QueryResult
 from app.models.task import GeneratedSQL, SchemaContext, TaskPlan
 from app.tools.sql_validator import ValidationResult
-
 
 # ── Fixtures ─────────────────────────────────────────────
 
@@ -64,7 +62,7 @@ class FakeRetriever:
 class FakeRegistry:
     """Mimics DatasetRegistry.get_catalog() returning a Catalog."""
     def get_catalog(self, session_id=None, user_id=None, top_k=10, question=None):
-        from app.services.dataset_registry import Catalog, TableSchema, ColumnSchema
+        from app.services.dataset_registry import Catalog, ColumnSchema, TableSchema
         return Catalog(tables=[
             TableSchema(
                 table_name="orders",

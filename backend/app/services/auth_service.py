@@ -1,5 +1,6 @@
 """Auth service — user registration, login, JWT token management."""
 
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -10,6 +11,8 @@ from pydantic import BaseModel
 
 from app.core.config import settings
 from app.core.database import db
+
+logger = logging.getLogger("t2s_analysis")
 
 
 def _ensure_db() -> None:
@@ -36,8 +39,8 @@ async def _ensure_users_table() -> None:
             "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP"
             ")"
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning({"event": "ensure_users_table_failed", "error": str(exc)[:200]})
 
 
 def _hash_password(password: str) -> str:

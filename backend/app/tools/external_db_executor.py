@@ -11,11 +11,10 @@ Usage:
 import asyncio
 import logging
 import time
-from typing import Optional
 
-import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from app.core.utils import sanitize_float
 from app.models.query import QueryResult
 from app.tools.sql_safety import check_write_blocked
 
@@ -128,8 +127,7 @@ class ExternalDBExecutor:
 
         # Clean NaN/Inf
         rows = [
-            {k: (None if isinstance(v, float) and (v != v or v == float("inf") or v == float("-inf")) else v)
-             for k, v in row.items()}
+            {k: sanitize_float(v) for k, v in row.items()}
             for row in rows
         ]
 

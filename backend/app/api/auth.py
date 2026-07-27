@@ -1,10 +1,12 @@
 """Auth API — register, login, current user."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from app.core.auth import get_current_user
+from app.core.config import settings
 from app.services.auth_service import UserOut, auth_service
+from main import limiter
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -27,7 +29,8 @@ class TokenResponse(BaseModel):
 
 
 @router.post("/register", response_model=TokenResponse)
-async def register(req: RegisterRequest):
+@limiter.limit(settings.RATE_LIMIT_AUTH)
+async def register(request: Request, req: RegisterRequest):
     """Register a new user and return a JWT token."""
     try:
         user = await auth_service.register(req.username, req.password, req.display_name)
@@ -38,7 +41,8 @@ async def register(req: RegisterRequest):
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(req: LoginRequest):
+@limiter.limit(settings.RATE_LIMIT_AUTH)
+async def login(request: Request, req: LoginRequest):
     """Authenticate and return a JWT token."""
     user = await auth_service.authenticate(req.username, req.password)
     if not user:

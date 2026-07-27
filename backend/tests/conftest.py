@@ -1,6 +1,7 @@
 """pytest configuration — session-scoped event loop for Windows compat."""
 
 import asyncio
+
 import pytest
 
 

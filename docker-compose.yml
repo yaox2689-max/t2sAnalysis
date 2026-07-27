@@ -4,7 +4,7 @@ services:
     container_name: t2s-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-root123}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?请在 .env 文件中设置 DB_PASSWORD}
       MYSQL_DATABASE: t2s_analysis
     ports:
       - "3306:3306"
@@ -43,12 +43,12 @@ services:
       DB_HOST: mysql
       DB_PORT: "3306"
       DB_USER: root
-      DB_PASSWORD: ${DB_PASSWORD:-root123}
+      DB_PASSWORD: ${DB_PASSWORD:?请在 .env 文件中设置 DB_PASSWORD}
       DB_NAME: t2s_analysis
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_DB: "0"
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-auto-generated-key-change-me}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?请在 .env 文件中设置 JWT_SECRET_KEY}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-deepseek-v4-flash}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com}

@@ -10,7 +10,7 @@ Usage:
     result = await db.execute("SELECT 1")
 """
 
-from typing import Any, Optional, Union
+from typing import Optional, Union
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine

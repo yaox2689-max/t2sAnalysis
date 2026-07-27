@@ -6,16 +6,16 @@ Endpoints:
     DELETE /api/datasets/{id}   — Delete a dataset
 """
 
+import logging
 import os
-import shutil
-import tempfile
 import uuid
-from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from app.core.auth import get_current_user
 from app.services.auth_service import UserOut
+
+logger = logging.getLogger("t2s_analysis")
 
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
 
@@ -121,7 +121,8 @@ async def upload_dataset(
                     "preview_rows": preview_rows,
                     "profile": ds.profile_meta,
                 })
-            except Exception:
+            except Exception as exc:
+                logger.warning({"event": "preview_build_failed", "table": ds.table_name, "error": str(exc)[:200]})
                 previews.append({
                     "dataset_id": ds.id,
                     "table_name": ds.table_name,

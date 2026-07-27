@@ -23,17 +23,7 @@ import sqlglot
 import sqlglot.expressions as exp
 from sqlglot import parse_one
 
-
-# ── Blocked write statement types ──────────────────────
-_WRITE_OPS = frozenset({
-    exp.Insert,
-    exp.Update,
-    exp.Delete,
-    exp.Drop,
-    exp.Alter,
-    exp.Create,
-    exp.Grant,
-})
+from app.tools.sql_safety import _WRITE_OPS
 
 
 class RiskLevel:
@@ -84,7 +74,6 @@ class SQLValidator:
         warnings: list[str] = []
 
         # ── Single AST pass for all checks ─────────────────
-        has_where = False
         for node in tree.walk():
             # Write operations → immediate failure
             if isinstance(node, tuple(_WRITE_OPS)):
@@ -95,7 +84,6 @@ class SQLValidator:
                 )
             # Full table scan detection
             if isinstance(node, exp.Select) and node.args.get("from_") and not node.args.get("where"):
-                has_where = True
                 warnings.append("FULL_TABLE_SCAN")
             # Cross join detection
             if isinstance(node, exp.Join) and node.kind and node.kind.upper() == "CROSS":

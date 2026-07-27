@@ -9,10 +9,8 @@ from app.agents.reflection import (
     ErrorClassifier,
     GeneratedSQL,
     ReflectionLoop,
-    ReflectionResult,
 )
 from app.models.task import SchemaContext, TaskPlan
-
 
 SAMPLE_TASK_PLAN = TaskPlan(
     task_type="aggregation",

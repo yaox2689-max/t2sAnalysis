@@ -12,7 +12,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -21,7 +21,15 @@ from app.core.config import settings
 from app.core.database import Database
 from app.core.deps import app_ctx
 from app.core.tracing import new_trace_id
+from app.core.utils import sanitize_float
 from app.services.auth_service import UserOut
+from app.services.chat_service import (
+    run_post_workflow_tools,
+    save_assistant_message,
+    save_user_message,
+    update_session_title_if_first,
+)
+from main import limiter
 
 logger = logging.getLogger("t2s_analysis")
 
@@ -42,9 +50,7 @@ class _SafeEncoder(json.JSONEncoder):
     def _sanitise(self, o: object) -> object:
         """Recursively replace NaN / Inf with None (null in JSON)."""
         if isinstance(o, float):
-            if o != o or o == float("inf") or o == float("-inf"):
-                return None
-            return o
+            return sanitize_float(o)
         if isinstance(o, dict):
             return {k: self._sanitise(v) for k, v in o.items()}
         if isinstance(o, list):
@@ -60,8 +66,7 @@ def _convert_decimals(rows: list[dict]) -> list[dict]:
         for k, v in row.items():
             if isinstance(v, Decimal):
                 v = float(v)
-            if isinstance(v, float) and (v != v or v == float("inf") or v == float("-inf")):
-                v = None
+            v = sanitize_float(v)
             clean[k] = v
         result.append(clean)
     return result
@@ -185,7 +190,8 @@ async def delete_session(session_id: str, user: UserOut = Depends(get_current_us
 
 
 @router.post("/chat")
-async def chat(request: ChatRequest, user: UserOut = Depends(get_current_user)) -> ChatResponse:
+@limiter.limit(settings.RATE_LIMIT_CHAT)
+async def chat(request: Request, req: ChatRequest, user: UserOut = Depends(get_current_user)) -> ChatResponse:
     """Receive a business question → run the agent → return structured answer.
 
     Persists both the user question and the assistant response in the
@@ -197,7 +203,7 @@ async def chat(request: ChatRequest, user: UserOut = Depends(get_current_user)) 
     db = await _get_db()
     sess = await db.execute(
         "SELECT id FROM sessions WHERE id = :sid AND user_id = :uid",
-        {"sid": request.session_id, "uid": user.id},
+        {"sid": req.session_id, "uid": user.id},
     )
     if not sess:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -207,7 +213,7 @@ async def chat(request: ChatRequest, user: UserOut = Depends(get_current_user)) 
         "SELECT role, content FROM messages "
         "WHERE session_id = :sid AND role IN ('user', 'assistant') "
         "ORDER BY id DESC LIMIT 20",
-        {"sid": request.session_id},
+        {"sid": req.session_id},
     )
     history_rows.reverse()  # chronological order
     history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
@@ -216,11 +222,11 @@ async def chat(request: ChatRequest, user: UserOut = Depends(get_current_user)) 
 
     # 3. Run the LangGraph Workflow
     trace_id = new_trace_id()
-    logger.info({"event": "chat_start", "trace_id": trace_id, "session_id": request.session_id})
+    logger.info({"event": "chat_start", "trace_id": trace_id, "session_id": req.session_id})
     try:
         state = await ctx.graph.ainvoke({
-            "question": request.question,
-            "session_id": request.session_id,
+            "question": req.question,
+            "session_id": req.session_id,
             "user_id": user.id,
             "trace_id": trace_id,
             "history": history,
@@ -230,16 +236,16 @@ async def chat(request: ChatRequest, user: UserOut = Depends(get_current_user)) 
         })
     except Exception as exc:
         elapsed_ms = (time.perf_counter() - start) * 1000
-        logger.error({"event": "workflow_error", "error": str(exc), "session_id": request.session_id})
+        logger.error({"event": "workflow_error", "error": str(exc), "session_id": req.session_id})
         await db.execute(
             "INSERT INTO messages (session_id, role, content, elapsed_ms) "
             "VALUES (:sid, 'user', :content, 0)",
-            {"sid": request.session_id, "content": request.question},
+            {"sid": req.session_id, "content": req.question},
         )
         await db.execute(
             "INSERT INTO messages (session_id, role, content, elapsed_ms) "
             "VALUES (:sid, 'assistant', :content, :elapsed)",
-            {"sid": request.session_id, "content": "抱歉，处理您的问题时遇到了内部错误，请稍后重试。", "elapsed": round(elapsed_ms, 2)},
+            {"sid": req.session_id, "content": "抱歉，处理您的问题时遇到了内部错误，请稍后重试。", "elapsed": round(elapsed_ms, 2)},
         )
         return ChatResponse(
             error="处理失败，请稍后重试",
@@ -271,10 +277,10 @@ async def chat(request: ChatRequest, user: UserOut = Depends(get_current_user)) 
         await db.execute(
             "INSERT INTO messages (session_id, role, content, elapsed_ms) "
             "VALUES (:sid, 'user', :content, 0)",
-            {"sid": request.session_id, "content": request.question},
+            {"sid": req.session_id, "content": req.question},
         )
         return ChatResponse(
-            session_id=request.session_id,
+            session_id=req.session_id,
             sql=sql,
             columns=columns,
             rows=rows,
@@ -284,86 +290,23 @@ async def chat(request: ChatRequest, user: UserOut = Depends(get_current_user)) 
 
     # 5. Run Chart Tool
     task_plan = state.get("task_plan")
-    chart_option = None
-    chart_type = ""
-    if ctx.chart_tool and query_result:
-        chart_result = ctx.chart_tool.render(query_result, task_plan)
-        chart_type = chart_result.chart_type
-        chart_option = chart_result.echarts_option
-
-    # 6. Run Insight Tool
-    insight_text = ""
-    if ctx.insight_tool and query_result:
-        try:
-            insight_result = await ctx.insight_tool.summarize(
-                query_result, request.question, chart_type=chart_type,
-            )
-            insight_text = insight_result.summary
-        except Exception:
-            insight_text = ""
-
-    # 6.5 Run Evidence Analyzer
-    evidence_data = None
-    if ctx.evidence_analyzer and query_result:
-        try:
-            evidence_report = await ctx.evidence_analyzer.analyze(
-                request.question, query_result,
-            )
-            evidence_data = {
-                "conclusion": evidence_report.conclusion,
-                "evidence_chain": [
-                    {"claim": e.claim, "data": e.data, "source": e.source, "strength": e.strength}
-                    for e in evidence_report.evidence_chain
-                ],
-                "suggestions": evidence_report.suggestions,
-                "limitations": evidence_report.limitations,
-            }
-        except Exception:
-            evidence_data = None
-
-    # 7. Save user message
-    await db.execute(
-        "INSERT INTO messages (session_id, role, content, elapsed_ms) "
-        "VALUES (:sid, 'user', :content, 0)",
-        {"sid": request.session_id, "content": request.question},
+    chart_type, chart_option, insight_text, evidence_data = await run_post_workflow_tools(
+        ctx, query_result, req.question, task_plan,
     )
 
-    # 8. Save assistant message with all structured data
-    msg_args = {
-        "sid": request.session_id,
-        "content": insight_text or "查询完成",
-        "sql": sql,
-        "chart_type": chart_type,
-        "echarts": json.dumps(chart_option, ensure_ascii=False, cls=_SafeEncoder) if chart_option else None,
-        "insight": insight_text,
-        "columns": json.dumps(columns, ensure_ascii=False, cls=_SafeEncoder) if columns else None,
-        "rows": json.dumps(rows, ensure_ascii=False, cls=_SafeEncoder) if rows else None,
-        "evidence": json.dumps(evidence_data, ensure_ascii=False, cls=_SafeEncoder) if evidence_data else None,
-        "elapsed": round(elapsed_ms, 2),
-    }
-    message_id = await db.execute_insert(
-        "INSERT INTO messages (session_id, role, content, sql_text, chart_type, "
-        "echarts_option, insight, `columns`, rows_data, evidence, elapsed_ms) "
-        "VALUES (:sid, 'assistant', :content, :sql, :chart_type, "
-        ":echarts, :insight, :columns, :rows, :evidence, :elapsed)",
-        msg_args,
+    # 6. Save messages
+    await save_user_message(db, req.session_id, req.question)
+    message_id = await save_assistant_message(
+        db, req.session_id, sql, chart_type, chart_option,
+        insight_text, columns, rows, evidence_data, elapsed_ms, _SafeEncoder,
     )
 
-    # 9. Update session title (first message only)
-    sess_check = await db.execute(
-        "SELECT COUNT(*) AS cnt FROM messages WHERE session_id = :sid AND role = 'user'",
-        {"sid": request.session_id},
-    )
-    if sess_check and sess_check[0]["cnt"] == 1:
-        title = request.question[:60] + ("..." if len(request.question) > 60 else "")
-        await db.execute(
-            "UPDATE sessions SET title = :title WHERE id = :sid",
-            {"title": title, "sid": request.session_id},
-        )
+    # 7. Update session title (first message only)
+    await update_session_title_if_first(db, req.session_id, req.question)
 
     return ChatResponse(
         message_id=message_id,
-        session_id=request.session_id,
+        session_id=req.session_id,
         sql=sql,
         columns=columns,
         rows=_convert_decimals(rows),
@@ -389,14 +332,15 @@ _NODE_LABELS: dict[str, str] = {
 
 
 @router.post("/chat/stream")
-async def chat_stream(request: ChatRequest, user: UserOut = Depends(get_current_user)):
+@limiter.limit(settings.RATE_LIMIT_CHAT)
+async def chat_stream(request: Request, req: ChatRequest, user: UserOut = Depends(get_current_user)):
     """SSE endpoint that streams progress events during workflow execution."""
     ctx = await app_ctx.ensure_initialized()
     db = await _get_db()
 
     sess = await db.execute(
         "SELECT id FROM sessions WHERE id = :sid AND user_id = :uid",
-        {"sid": request.session_id, "uid": user.id},
+        {"sid": req.session_id, "uid": user.id},
     )
     if not sess:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -406,7 +350,7 @@ async def chat_stream(request: ChatRequest, user: UserOut = Depends(get_current_
         "SELECT role, content FROM messages "
         "WHERE session_id = :sid AND role IN ('user', 'assistant') "
         "ORDER BY id DESC LIMIT 20",
-        {"sid": request.session_id},
+        {"sid": req.session_id},
     )
     history_rows.reverse()
     history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
@@ -414,11 +358,11 @@ async def chat_stream(request: ChatRequest, user: UserOut = Depends(get_current_
     async def event_generator():
         trace_id = new_trace_id()
         start = time.perf_counter()
-        logger.info({"event": "chat_stream_start", "trace_id": trace_id, "session_id": request.session_id})
+        logger.info({"event": "chat_stream_start", "trace_id": trace_id, "session_id": req.session_id})
 
         initial_state = {
-            "question": request.question,
-            "session_id": request.session_id,
+            "question": req.question,
+            "session_id": req.session_id,
             "user_id": user.id,
             "trace_id": trace_id,
             "history": history,
@@ -466,92 +410,32 @@ async def chat_stream(request: ChatRequest, user: UserOut = Depends(get_current_
             await db.execute(
                 "INSERT INTO messages (session_id, role, content, elapsed_ms) "
                 "VALUES (:sid, 'user', :content, 0)",
-                {"sid": request.session_id, "content": request.question},
+                {"sid": req.session_id, "content": req.question},
             )
             yield f'data: {json.dumps({"type": "error", "message": "No data returned", "elapsed_ms": round(elapsed_ms, 2)}, ensure_ascii=False, cls=_SafeEncoder)}\n\n'
             return
 
         # Post-workflow tools
         task_plan = final_state.get("task_plan")
-        chart_option = None
-        chart_type = ""
-        if ctx.chart_tool and query_result:
-            chart_result = ctx.chart_tool.render(query_result, task_plan)
-            chart_type = chart_result.chart_type
-            chart_option = chart_result.echarts_option
-
-        insight_text = ""
-        if ctx.insight_tool and query_result:
-            try:
-                insight_result = await ctx.insight_tool.summarize(
-                    query_result, request.question, chart_type=chart_type,
-                )
-                insight_text = insight_result.summary
-            except Exception:
-                insight_text = ""
-
-        evidence_data = None
-        if ctx.evidence_analyzer and query_result:
-            try:
-                evidence_report = await ctx.evidence_analyzer.analyze(
-                    request.question, query_result,
-                )
-                evidence_data = {
-                    "conclusion": evidence_report.conclusion,
-                    "evidence_chain": [
-                        {"claim": e.claim, "data": e.data, "source": e.source, "strength": e.strength}
-                        for e in evidence_report.evidence_chain
-                    ],
-                    "suggestions": evidence_report.suggestions,
-                    "limitations": evidence_report.limitations,
-                }
-            except Exception:
-                evidence_data = None
-
-        # Save messages
-        await db.execute(
-            "INSERT INTO messages (session_id, role, content, elapsed_ms) "
-            "VALUES (:sid, 'user', :content, 0)",
-            {"sid": request.session_id, "content": request.question},
+        chart_type, chart_option, insight_text, evidence_data = await run_post_workflow_tools(
+            ctx, query_result, req.question, task_plan,
         )
 
-        msg_args = {
-            "sid": request.session_id,
-            "content": insight_text or "查询完成",
-            "sql": sql,
-            "chart_type": chart_type,
-            "echarts": json.dumps(chart_option, ensure_ascii=False, cls=_SafeEncoder) if chart_option else None,
-            "insight": insight_text,
-            "columns": json.dumps(columns, ensure_ascii=False, cls=_SafeEncoder) if columns else None,
-            "rows": json.dumps(rows, ensure_ascii=False, cls=_SafeEncoder) if rows else None,
-            "evidence": json.dumps(evidence_data, ensure_ascii=False, cls=_SafeEncoder) if evidence_data else None,
-            "elapsed": round(elapsed_ms, 2),
-        }
-        message_id = await db.execute_insert(
-            "INSERT INTO messages (session_id, role, content, sql_text, chart_type, "
-            "echarts_option, insight, `columns`, rows_data, evidence, elapsed_ms) "
-            "VALUES (:sid, 'assistant', :content, :sql, :chart_type, "
-            ":echarts, :insight, :columns, :rows, :evidence, :elapsed)",
-            msg_args,
+        # Save messages
+        await save_user_message(db, req.session_id, req.question)
+        message_id = await save_assistant_message(
+            db, req.session_id, sql, chart_type, chart_option,
+            insight_text, columns, rows, evidence_data, elapsed_ms, _SafeEncoder,
         )
 
         # Update session title (first message only)
-        sess_check = await db.execute(
-            "SELECT COUNT(*) AS cnt FROM messages WHERE session_id = :sid AND role = 'user'",
-            {"sid": request.session_id},
-        )
-        if sess_check and sess_check[0]["cnt"] == 1:
-            title = request.question[:60] + ("..." if len(request.question) > 60 else "")
-            await db.execute(
-                "UPDATE sessions SET title = :title WHERE id = :sid",
-                {"title": title, "sid": request.session_id},
-            )
+        await update_session_title_if_first(db, req.session_id, req.question)
 
         # Yield final result
         result_payload = {
             "type": "result",
             "message_id": message_id,
-            "session_id": request.session_id,
+            "session_id": req.session_id,
             "sql": sql,
             "columns": columns,
             "rows": _convert_decimals(rows),

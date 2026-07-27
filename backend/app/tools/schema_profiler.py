@@ -15,9 +15,12 @@ Usage:
 """
 
 import logging
-from typing import Optional
+import time
 
 logger = logging.getLogger("t2s_analysis")
+
+# Cache TTL in seconds (10 minutes)
+_CACHE_TTL = 600
 
 # Semantic type constants
 DIMENSION = "dimension"
@@ -44,9 +47,12 @@ class SchemaProfiler:
 
     def __init__(self, duckdb_engine: object) -> None:
         self._engine = duckdb_engine
+        self._cache: dict[str, tuple[float, dict]] = {}
 
     def profile(self, table_name: str) -> dict:
         """Generate a full profile for a DuckDB table.
+
+        Results are cached for 10 minutes to avoid repeated expensive queries.
 
         Returns:
             {
@@ -68,6 +74,13 @@ class SchemaProfiler:
                 ]
             }
         """
+        # Check cache
+        now = time.monotonic()
+        if table_name in self._cache:
+            cached_at, cached_result = self._cache[table_name]
+            if now - cached_at < _CACHE_TTL:
+                return cached_result
+
         # 1. Get column schema
         desc = self._engine.execute(f'DESCRIBE "{table_name}"').fetchall()
         # desc: [(col_name, col_type, null, key, default, extra), ...]
@@ -97,7 +110,14 @@ class SchemaProfiler:
         }
         if date_range:
             result["date_range"] = date_range
+
+        # Store in cache
+        self._cache[table_name] = (time.monotonic(), result)
         return result
+
+    def invalidate(self, table_name: str) -> None:
+        """Remove a table from the profile cache."""
+        self._cache.pop(table_name, None)
 
     def _profile_column(
         self, table: str, col_name: str, col_type: str, row_count: int
@@ -135,8 +155,8 @@ class SchemaProfiler:
                 if result:
                     min_val = str(result[0]) if result[0] is not None else None
                     max_val = str(result[1]) if result[1] is not None else None
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug({"event": "profile_min_max_failed", "table": table, "column": col_name, "error": str(exc)[:200]})
 
         # Top values (for low-cardinality columns)
         top_values = []
@@ -148,8 +168,8 @@ class SchemaProfiler:
                     f"GROUP BY {safe_col} ORDER BY cnt DESC LIMIT 5"
                 ).fetchall()
                 top_values = [str(r[0]) for r in result]
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug({"event": "profile_top_values_failed", "table": table, "column": col_name, "error": str(exc)[:200]})
 
         # Semantic type
         semantic_type = self._infer_semantic_type(

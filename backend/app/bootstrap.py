@@ -14,7 +14,6 @@ Usage:
 
 import logging
 import os
-import uuid
 
 logger = logging.getLogger("t2s_analysis")
 
@@ -63,8 +62,8 @@ class Bootstrap:
         self.prompt_builder = PromptBuilder(duckdb_engine=duckdb_engine)
 
         # 6. Init DuckDBExecutor
-        from app.tools.duckdb_executor import DuckDBExecutor
         from app.core.config import settings as _settings
+        from app.tools.duckdb_executor import DuckDBExecutor
         self.executor = DuckDBExecutor(duckdb_engine, timeout=_settings.SQL_TIMEOUT)
 
         # 7. Init DatasetManager
@@ -111,12 +110,14 @@ class Bootstrap:
         # Migrate: add user_id to datasets
         try:
             await db.execute("ALTER TABLE datasets ADD COLUMN user_id VARCHAR(36)")
-        except Exception:
-            pass
+        except Exception as exc:
+            if "Duplicate column" not in str(exc):
+                logger.warning({"event": "migrate_add_user_id_datasets", "error": str(exc)[:200]})
         try:
             await db.execute("CREATE INDEX idx_datasets_user ON datasets (user_id)")
-        except Exception:
-            pass
+        except Exception as exc:
+            if "Duplicate key name" not in str(exc):
+                logger.warning({"event": "migrate_index_datasets_user", "error": str(exc)[:200]})
 
     async def _ensure_chat_tables(self, db: object) -> None:
         """Create sessions and messages tables in MySQL if they don't exist."""
@@ -156,18 +157,21 @@ class Bootstrap:
         # Migrate: add evidence column for existing databases
         try:
             await db.execute("ALTER TABLE messages ADD COLUMN evidence JSON")
-        except Exception:
-            pass  # column already exists
+        except Exception as exc:
+            if "Duplicate column" not in str(exc):
+                logger.warning({"event": "migrate_add_evidence", "error": str(exc)[:200]})
 
         # Migrate: add user_id to sessions
         try:
             await db.execute("ALTER TABLE sessions ADD COLUMN user_id VARCHAR(36)")
-        except Exception:
-            pass
+        except Exception as exc:
+            if "Duplicate column" not in str(exc):
+                logger.warning({"event": "migrate_add_user_id_sessions", "error": str(exc)[:200]})
         try:
             await db.execute("CREATE INDEX idx_sessions_user ON sessions (user_id)")
-        except Exception:
-            pass
+        except Exception as exc:
+            if "Duplicate key name" not in str(exc):
+                logger.warning({"event": "migrate_index_sessions_user", "error": str(exc)[:200]})
 
         # Create mysql_connections table
         connections_ddl = (
@@ -187,8 +191,8 @@ class Bootstrap:
         )
         try:
             await db.execute(connections_ddl)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning({"event": "mysql_connections_table", "error": str(exc)[:200]})
 
     async def _load_datasets_from_mysql(self, db: object, duckdb_engine: object) -> None:
         """Load dataset metadata from MySQL into the registry."""
@@ -200,7 +204,8 @@ class Bootstrap:
                 "row_count, column_count, columns_meta, profile_meta "
                 "FROM datasets WHERE status = 'ready'"
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning({"event": "load_datasets_query_failed", "error": str(exc)[:200]})
             rows = []
 
         existing_tables = set(duckdb_engine.tables())
@@ -216,7 +221,8 @@ class Bootstrap:
             if isinstance(columns_meta, str):
                 try:
                     columns_meta = _json.loads(columns_meta)
-                except Exception:
+                except Exception as exc:
+                    logger.warning({"event": "parse_columns_meta_failed", "table": table_name, "error": str(exc)[:200]})
                     columns_meta = []
 
             self.registry.register(

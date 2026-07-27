@@ -14,11 +14,8 @@ import asyncio
 import logging
 import re
 import time
-from typing import Optional
 
-import sqlglot
-import sqlglot.expressions as exp
-
+from app.core.utils import sanitize_float
 from app.models.query import QueryResult
 from app.tools.sql_safety import check_write_blocked
 
@@ -74,12 +71,10 @@ class DuckDBExecutor:
                 timeout=self.timeout,
             )
         except asyncio.TimeoutError:
-            elapsed_ms = (time.perf_counter() - start) * 1000
             raise DuckDBExecutionError(
                 f"Query timed out after {self.timeout}s"
             )
         except Exception as exc:
-            elapsed_ms = (time.perf_counter() - start) * 1000
             raise DuckDBExecutionError(str(exc)) from exc
 
         elapsed_ms = (time.perf_counter() - start) * 1000
@@ -89,8 +84,7 @@ class DuckDBExecutor:
 
         # Clean NaN / Inf values → None (JSON-safe)
         rows = [
-            {k: (None if isinstance(v, float) and (v != v or v == float("inf") or v == float("-inf")) else v)
-             for k, v in row.items()}
+            {k: sanitize_float(v) for k, v in row.items()}
             for row in rows
         ]
         truncated = False

@@ -7,7 +7,6 @@ import pytest
 
 from app.core.tracing import new_trace_id, trace_node
 
-
 # ── Tracing tests ───────────────────────────────────────
 
 
@@ -94,7 +93,8 @@ class TestJSONLogger:
         """Logger writes valid JSON with timestamp and level."""
         import io
         import logging
-        from app.core.logging import logger, JSONFormatter
+
+        from app.core.logging import JSONFormatter, logger
 
         buf = io.StringIO()
         handler = logging.StreamHandler(buf)
@@ -193,7 +193,7 @@ class TestMetrics:
 
 class TestRunner:
     async def test_runner_with_mock(self):
-        from evaluation.runner import run, load_dataset
+        from evaluation.runner import load_dataset, run
 
         dataset = load_dataset()
         assert len(dataset) >= 5  # at least 5 cases

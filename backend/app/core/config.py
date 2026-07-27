@@ -5,9 +5,14 @@ or .env file. Every new config option should be added here with
 a proper type annotation and description.
 """
 
-import secrets
+import logging
+from typing import Any
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
+_DEV_SECRET = "dev-secret-do-not-use-in-prod"
 
 
 class Settings(BaseSettings):
@@ -53,9 +58,14 @@ class Settings(BaseSettings):
     SQL_MAX_ROWS: int = 500
 
     # ── Auth ────────────────────────────────────────────
-    JWT_SECRET_KEY: str = secrets.token_urlsafe(32)
+    JWT_SECRET_KEY: str = _DEV_SECRET
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 1440
+
+    # ── Rate Limiting ──────────────────────────────────
+    RATE_LIMIT_DEFAULT: str = "60/minute"
+    RATE_LIMIT_AUTH: str = "10/minute"
+    RATE_LIMIT_CHAT: str = "5/minute"
 
     # ── Redis (cache) ──────────────────────────────────
     REDIS_HOST: str = "localhost"
@@ -66,6 +76,13 @@ class Settings(BaseSettings):
     # 填写 API Key 即启用，留空则不接入
     LANGSMITH_API_KEY: str = ""
     LANGSMITH_PROJECT: str = "t2s-analysis"
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.JWT_SECRET_KEY == _DEV_SECRET:
+            logger.warning(
+                "JWT_SECRET_KEY is using the default development value. "
+                "Set a strong random string in production via JWT_SECRET_KEY env var."
+            )
 
 
 settings = Settings()

@@ -4,7 +4,6 @@ import pytest
 
 from app.core.database import db as _db
 
-
 # ── Database tests ────────────────────────────────────
 
 @pytest.fixture(scope="module")

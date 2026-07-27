@@ -20,7 +20,6 @@ from typing import Optional
 from langgraph.graph.state import CompiledStateGraph
 
 from app.core.config import settings
-from app.core.database import Database
 from app.tools.chart import ChartTool
 from app.tools.evidence_analyzer import EvidenceAnalyzer
 from app.tools.insight import InsightTool

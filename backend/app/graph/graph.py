@@ -10,7 +10,6 @@ Usage:
     result = await graph.ainvoke({"question": "销售额趋势", "max_retries": 3})
 """
 
-from functools import partial
 
 from langgraph.graph import END, StateGraph
 

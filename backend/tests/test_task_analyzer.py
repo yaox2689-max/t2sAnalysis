@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.models.task import TaskPlan
 from app.services.task_analyzer import TaskAnalyzer
 
 

@@ -15,7 +15,6 @@ import sqlglot
 import sqlglot.expressions as exp
 
 from app.models.query import QueryResult
-from app.tools.sql_safety import check_write_blocked
 
 logger = logging.getLogger("t2s_analysis")
 

@@ -27,14 +27,9 @@ Usage:
 import json
 from typing import Optional
 
-import httpx
-from openai import AsyncOpenAI
-
 from app.core.prompt_loader import prompt_loader
+from app.core.utils import create_llm_client, format_query_result
 from app.models.query import QueryResult
-
-_PREVIEW_MAX_ROWS = 20
-_LLM_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 
 
 def _load_prompt() -> str:
@@ -81,44 +76,7 @@ class EvidenceReport:
 
 def _format_result(result: QueryResult, label: str = "primary") -> str:
     """Format a QueryResult into a compact text summary."""
-    lines: list[str] = []
-    rows = result.rows or []
-    columns = result.columns or []
-
-    lines.append(f"[{label}] 行数: {len(rows)}, 列: {', '.join(columns)}")
-
-    if rows:
-        lines.append(f"[{label}] 预览:")
-        preview = rows[:_PREVIEW_MAX_ROWS]
-        for row in preview:
-            vals = ", ".join(f"{k}={v}" for k, v in row.items() if k in columns)
-            lines.append(f"  {vals}")
-
-        if len(rows) > _PREVIEW_MAX_ROWS:
-            lines.append(f"  ... 共 {len(rows)} 行，以上仅展示前 {_PREVIEW_MAX_ROWS} 行")
-
-        lines.append(f"[{label}] 统计:")
-        for col in columns:
-            numeric_vals: list[float] = []
-            for r in rows:
-                v = r.get(col)
-                if v is not None:
-                    try:
-                        numeric_vals.append(float(v))
-                    except (ValueError, TypeError):
-                        pass
-            if numeric_vals:
-                lines.append(
-                    f"  {col}: 数量={len(numeric_vals)}, "
-                    f"最小={min(numeric_vals):.2f}, "
-                    f"最大={max(numeric_vals):.2f}, "
-                    f"均值={sum(numeric_vals)/len(numeric_vals):.2f}"
-                )
-            else:
-                distinct = len({r.get(col) for r in rows if r.get(col) is not None})
-                lines.append(f"  {col}: {distinct} 个不同值")
-
-    return "\n".join(lines)
+    return format_query_result(result, label=label, lang="zh")
 
 
 # ── Tool ─────────────────────────────────────────────────
@@ -132,8 +90,9 @@ class EvidenceAnalyzer:
         api_key: str,
         model: str,
         base_url: Optional[str] = None,
+        http_client: Optional[object] = None,
     ) -> None:
-        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=_LLM_TIMEOUT)
+        self._client = create_llm_client(api_key, base_url, http_client=http_client)
         self._model = model
         self._prompt = _load_prompt()
 

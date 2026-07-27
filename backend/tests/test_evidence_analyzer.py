@@ -10,7 +10,6 @@ from app.tools.evidence_analyzer import (
     _format_result,
 )
 
-
 # ── _format_result tests ────────────────────────────────
 
 

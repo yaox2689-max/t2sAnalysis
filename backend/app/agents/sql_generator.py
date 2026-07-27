@@ -18,14 +18,11 @@ import re
 from datetime import datetime
 from typing import Optional
 
-import httpx
 import sqlglot
-from openai import AsyncOpenAI
 
 from app.core.prompt_loader import prompt_loader
+from app.core.utils import create_llm_client
 from app.models.task import GeneratedSQL, SchemaContext, TaskPlan
-
-_LLM_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 
 
 def _build_schema_text(schema: SchemaContext) -> str:
@@ -79,10 +76,7 @@ class SQLGenerator:
         base_url: Optional[str] = None,
         http_client: Optional[object] = None,
     ) -> None:
-        kwargs = {"api_key": api_key, "base_url": base_url, "timeout": _LLM_TIMEOUT}
-        if http_client is not None:
-            kwargs["http_client"] = http_client
-        self.client = AsyncOpenAI(**kwargs)
+        self.client = create_llm_client(api_key, base_url, http_client=http_client)
         self.model = model
         self._system_prompt = prompt_loader.load("sql_agent/sql_generation")
 

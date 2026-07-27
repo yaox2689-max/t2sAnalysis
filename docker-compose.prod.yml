@@ -4,7 +4,7 @@ services:
     container_name: t2s-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-root123}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?请在 .env 文件中设置 DB_PASSWORD}
       MYSQL_DATABASE: ${DB_NAME:-t2s_analysis}
     ports:
       - "3306"

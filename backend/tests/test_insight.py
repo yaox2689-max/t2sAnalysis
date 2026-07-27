@@ -7,7 +7,6 @@ import pytest
 from app.models.query import QueryResult
 from app.tools.insight import InsightTool, _format_result
 
-
 # ── _format_result tests ────────────────────────────────
 
 

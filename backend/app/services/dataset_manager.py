@@ -15,12 +15,11 @@ Usage:
     await manager.delete_dataset(dataset.id)
 """
 
-import csv
 import json
 import logging
 import os
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 from app.tools.column_cleaner import clean_column_names, generate_table_name

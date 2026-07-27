@@ -7,6 +7,7 @@ Endpoints (all require auth):
     DELETE /api/connections/{id} — Remove connection + unregister tables
 """
 
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -17,6 +18,8 @@ from app.core.database import db
 from app.services.auth_service import UserOut
 from app.services.credential_encryption import decrypt_password, encrypt_password
 from app.tools.external_db_executor import ExternalDBExecutor
+
+logger = logging.getLogger("t2s_analysis")
 
 router = APIRouter(prefix="/api/connections", tags=["connections"])
 
@@ -85,7 +88,8 @@ async def create_connection(req: ConnectionRequest, user: UserOut = Depends(get_
     # Introspect tables
     try:
         columns_map = await _executor.introspect_tables(cfg)
-    except Exception:
+    except Exception as exc:
+        logger.warning({"event": "introspect_tables_failed", "error": str(exc)[:200]})
         columns_map = {}
 
     conn_id = str(uuid.uuid4())
@@ -187,8 +191,8 @@ async def delete_connection(connection_id: str, user: UserOut = Depends(get_curr
             "host": row["host"], "port": row["port"],
             "database": row["database"], "username": row["username"], "password": pw,
         })
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning({"event": "invalidate_engine_failed", "error": str(exc)[:200]})
 
     # Delete from MySQL
     await db.execute("DELETE FROM mysql_connections WHERE id = :id", {"id": connection_id})
