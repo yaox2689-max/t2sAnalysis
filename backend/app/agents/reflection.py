@@ -11,7 +11,7 @@ Usage:
     from app.agents.reflection import ReflectionLoop
 
     loop = ReflectionLoop(
-        api_key="...", model="deepseek-chat",
+        llm_client=llm_client,
         sql_generator=gen, schema_retriever=retriever,
     )
     result = await loop.run(question, sql, error, task_plan, schema_context)
@@ -20,10 +20,8 @@ Usage:
 import json
 from typing import Optional
 
-from openai import AsyncOpenAI
-
+from app.core.llm_client import LLMClient
 from app.core.prompt_loader import prompt_loader
-from app.core.utils import create_llm_client
 from app.models.task import GeneratedSQL, SchemaContext, TaskPlan
 
 # ── Models ──────────────────────────────────────────────
@@ -87,22 +85,17 @@ class ReflectionResult:
 class ErrorClassifier:
     """Classify SQL errors using LLM."""
 
-    def __init__(self, llm_client: AsyncOpenAI, model: str) -> None:
-        self._client = llm_client
-        self._model = model
+    def __init__(self, llm_client: LLMClient) -> None:
+        self._llm_client = llm_client
         self._prompt = prompt_loader.load("reflection/error_classifier")
 
     async def classify(self, error_msg: str) -> ErrorClassification:
         """Classify an error message into a known type."""
-        response = await self._client.chat.completions.create(
-            model=self._model,
-            messages=[
-                {"role": "system", "content": self._prompt},
-                {"role": "user", "content": f"## Error Message\n\n{error_msg}"},
-            ],
+        raw = await self._llm_client.call(
+            system_prompt=self._prompt,
+            user_msg=f"## Error Message\n\n{error_msg}",
             temperature=0.0,
         )
-        raw = response.choices[0].message.content or ""
         return self._parse(raw)
 
     @staticmethod
@@ -128,18 +121,14 @@ class ReflectionLoop:
 
     def __init__(
         self,
-        api_key: str,
-        model: str,
-        base_url: Optional[str],
+        llm_client: LLMClient,
         sql_generator: object,
         schema_retriever: object,
-        http_client: Optional[object] = None,
     ) -> None:
-        self._client = create_llm_client(api_key, base_url, http_client=http_client)
-        self._model = model
+        self._llm_client = llm_client
         self._sql_generator = sql_generator
         self._schema_retriever = schema_retriever
-        self._classifier = ErrorClassifier(self._client, model)
+        self._classifier = ErrorClassifier(llm_client)
         self._fix_prompt = prompt_loader.load("reflection/sql_fix")
 
     async def run(
@@ -268,15 +257,11 @@ class ReflectionLoop:
             f"## Original SQL\n\n{sql}\n\n"
             f"## Error Message\n\n{error_message}"
         )
-        response = await self._client.chat.completions.create(
-            model=self._model,
-            messages=[
-                {"role": "system", "content": self._fix_prompt},
-                {"role": "user", "content": user_msg},
-            ],
+        raw = await self._llm_client.call(
+            system_prompt=self._fix_prompt,
+            user_msg=user_msg,
             temperature=0.1,
         )
-        raw = response.choices[0].message.content or ""
         return self._parse_fix(raw)
 
     async def _handle_ambiguous(

@@ -7,11 +7,38 @@ between the streaming and non-streaming chat endpoints.
 
 import json
 import logging
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Optional
 
-from app.core.database import Database
+from app.core.database import db
+from app.core.utils import sanitize_float, truncate_error
 
 logger = logging.getLogger("t2s_analysis")
+
+
+class _SafeEncoder(json.JSONEncoder):
+    """Handle types that the default encoder cannot serialise (Decimal, date, ...)."""
+
+    def default(self, o: object) -> object:
+        if isinstance(o, Decimal):
+            return float(o)
+        if isinstance(o, (datetime, date)):
+            return o.isoformat()
+        return super().default(o)
+
+    def encode(self, o: object) -> str:
+        return super().encode(self._sanitise(o))
+
+    def _sanitise(self, o: object) -> object:
+        """Recursively replace NaN / Inf with None (null in JSON)."""
+        if isinstance(o, float):
+            return sanitize_float(o)
+        if isinstance(o, dict):
+            return {k: self._sanitise(v) for k, v in o.items()}
+        if isinstance(o, list):
+            return [self._sanitise(v) for v in o]
+        return o
 
 
 async def run_post_workflow_tools(
@@ -40,7 +67,7 @@ async def run_post_workflow_tools(
             )
             insight_text = insight_result.summary
         except Exception as exc:
-            logger.warning({"event": "insight_failed", "error": str(exc)[:200]})
+            logger.warning({"event": "insight_failed", "error": truncate_error(exc)})
 
     evidence_data = None
     if ctx.evidence_analyzer and query_result:
@@ -58,12 +85,12 @@ async def run_post_workflow_tools(
                 "limitations": evidence_report.limitations,
             }
         except Exception as exc:
-            logger.warning({"event": "evidence_failed", "error": str(exc)[:200]})
+            logger.warning({"event": "evidence_failed", "error": truncate_error(exc)})
 
     return chart_type, chart_option, insight_text, evidence_data
 
 
-async def save_user_message(db: Database, session_id: str, question: str) -> None:
+async def save_user_message(session_id: str, question: str) -> None:
     """Persist the user's question as a message."""
     await db.execute(
         "INSERT INTO messages (session_id, role, content, elapsed_ms) "
@@ -73,31 +100,28 @@ async def save_user_message(db: Database, session_id: str, question: str) -> Non
 
 
 async def save_assistant_message(
-    db: Database,
     session_id: str,
-    sql: str,
-    chart_type: str,
-    chart_option: Any,
-    insight_text: str,
-    columns: list,
-    rows: list,
-    evidence_data: Optional[dict],
-    elapsed_ms: float,
-    safe_encoder: type,
+    result: dict,
 ) -> int:
-    """Persist the assistant's structured response and return the message ID."""
-    content = insight_text or "查询完成"
+    """Persist the assistant's structured response and return the message ID.
+
+    Args:
+        session_id: The chat session ID.
+        result: A dict containing sql, chart_type, echarts_option,
+            insight, columns, rows, evidence, and elapsed_ms.
+    """
+    content = result.get("insight") or "查询完成"
     msg_args = {
         "sid": session_id,
         "content": content,
-        "sql": sql,
-        "chart_type": chart_type,
-        "echarts": json.dumps(chart_option, ensure_ascii=False, cls=safe_encoder) if chart_option else None,
-        "insight": insight_text,
-        "columns": json.dumps(columns, ensure_ascii=False, cls=safe_encoder) if columns else None,
-        "rows": json.dumps(rows, ensure_ascii=False, cls=safe_encoder) if rows else None,
-        "evidence": json.dumps(evidence_data, ensure_ascii=False, cls=safe_encoder) if evidence_data else None,
-        "elapsed": round(elapsed_ms, 2),
+        "sql": result.get("sql", ""),
+        "chart_type": result.get("chart_type", ""),
+        "echarts": json.dumps(result.get("echarts_option"), ensure_ascii=False, cls=_SafeEncoder) if result.get("echarts_option") else None,
+        "insight": result.get("insight", ""),
+        "columns": json.dumps(result.get("columns"), ensure_ascii=False, cls=_SafeEncoder) if result.get("columns") else None,
+        "rows": json.dumps(result.get("rows"), ensure_ascii=False, cls=_SafeEncoder) if result.get("rows") else None,
+        "evidence": json.dumps(result.get("evidence"), ensure_ascii=False, cls=_SafeEncoder) if result.get("evidence") else None,
+        "elapsed": round(result.get("elapsed_ms", 0), 2),
     }
     return await db.execute_insert(
         "INSERT INTO messages (session_id, role, content, sql_text, chart_type, "
@@ -108,9 +132,7 @@ async def save_assistant_message(
     )
 
 
-async def update_session_title_if_first(
-    db: Database, session_id: str, question: str
-) -> None:
+async def update_session_title_if_first(session_id: str, question: str) -> None:
     """Update session title to the question text if this is the first user message."""
     sess_check = await db.execute(
         "SELECT COUNT(*) AS cnt FROM messages WHERE session_id = :sid AND role = 'user'",
@@ -122,3 +144,20 @@ async def update_session_title_if_first(
             "UPDATE sessions SET title = :title WHERE id = :sid",
             {"title": title, "sid": session_id},
         )
+
+
+async def persist_conversation(
+    session_id: str,
+    user_id: str,
+    question: str,
+    result: dict,
+    history: list[dict],
+) -> int:
+    """Save user message, assistant message, and update session title.
+
+    Returns the assistant message ID.
+    """
+    await save_user_message(session_id, question)
+    message_id = await save_assistant_message(session_id, result)
+    await update_session_title_if_first(session_id, question)
+    return message_id

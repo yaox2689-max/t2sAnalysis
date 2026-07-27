@@ -15,34 +15,6 @@ from app.core.database import db
 logger = logging.getLogger("t2s_analysis")
 
 
-def _ensure_db() -> None:
-    """Ensure database is initialized (lazy init on first auth call)."""
-    if not db.is_initialized:
-        db.init()
-
-
-async def _ensure_users_table() -> None:
-    """Create users table if it doesn't exist (idempotent)."""
-    from app.bootstrap import bootstrap
-    if not bootstrap._initialized:
-        await bootstrap.run()
-    elif not db.is_initialized:
-        db.init()
-    # Fallback: try creating table directly if bootstrap somehow skipped it
-    try:
-        await db.execute(
-            "CREATE TABLE IF NOT EXISTS users ("
-            "  id VARCHAR(36) PRIMARY KEY,"
-            "  username VARCHAR(64) NOT NULL UNIQUE,"
-            "  password_hash VARCHAR(255) NOT NULL,"
-            "  display_name VARCHAR(128),"
-            "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP"
-            ")"
-        )
-    except Exception as exc:
-        logger.warning({"event": "ensure_users_table_failed", "error": str(exc)[:200]})
-
-
 def _hash_password(password: str) -> str:
     """Hash a password using bcrypt."""
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
@@ -66,7 +38,8 @@ class AuthService:
 
     async def register(self, username: str, password: str, display_name: str = "") -> UserOut:
         """Register a new user. Raises ValueError if username taken."""
-        await _ensure_users_table()
+        from app.bootstrap import bootstrap
+        await bootstrap.run()
         existing = await db.execute(
             "SELECT id FROM users WHERE username = :u", {"u": username}
         )
@@ -84,7 +57,8 @@ class AuthService:
 
     async def authenticate(self, username: str, password: str) -> Optional[UserOut]:
         """Verify credentials. Returns UserOut on success, None on failure."""
-        await _ensure_users_table()
+        from app.bootstrap import bootstrap
+        await bootstrap.run()
         rows = await db.execute(
             "SELECT id, username, password_hash, display_name FROM users WHERE username = :u",
             {"u": username},
@@ -114,7 +88,8 @@ class AuthService:
 
     async def get_user(self, user_id: str) -> Optional[UserOut]:
         """Look up user by ID."""
-        await _ensure_users_table()
+        from app.bootstrap import bootstrap
+        await bootstrap.run()
         rows = await db.execute(
             "SELECT id, username, display_name FROM users WHERE id = :id",
             {"id": user_id},

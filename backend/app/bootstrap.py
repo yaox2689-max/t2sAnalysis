@@ -2,7 +2,7 @@
 
 Run once on application start:
 1. Open DuckDB connection
-2. Create MySQL tables (sessions / messages / datasets)
+2. Create MySQL tables (fallback) — schema migrations via ``alembic upgrade head``
 3. Initialize DatasetRegistry
 4. Initialize PromptBuilder
 
@@ -12,8 +12,14 @@ Usage:
     await bootstrap.run()
 """
 
+import asyncio
 import logging
 import os
+
+from app.core.config import settings
+from app.core.database import Database
+from app.core.duckdb import DuckDBEngine
+from app.core.utils import truncate_error
 
 logger = logging.getLogger("t2s_analysis")
 
@@ -29,6 +35,11 @@ class Bootstrap:
         self.executor = None
         self.dataset_manager = None
 
+    @property
+    def is_initialized(self) -> bool:
+        """Return True if bootstrap has completed."""
+        return self._initialized
+
     async def run(self) -> None:
         """Full startup sequence."""
         if self._initialized:
@@ -41,7 +52,8 @@ class Bootstrap:
         duckdb_engine.init()
         logger.info({"event": "bootstrap_duckdb_ready"})
 
-        # 2. Init MySQL (business metadata)
+        # 2. Init MySQL (business metadata) — CREATE TABLE IF NOT EXISTS as fallback
+        #    For schema migrations, run: alembic upgrade head
         from app.core.database import db
         db.init()
         await self._ensure_users_table(db)
@@ -62,21 +74,20 @@ class Bootstrap:
         self.prompt_builder = PromptBuilder(duckdb_engine=duckdb_engine)
 
         # 6. Init DuckDBExecutor
-        from app.core.config import settings as _settings
         from app.tools.duckdb_executor import DuckDBExecutor
-        self.executor = DuckDBExecutor(duckdb_engine, timeout=_settings.SQL_TIMEOUT)
+        self.executor = DuckDBExecutor(duckdb_engine, timeout=settings.SQL_TIMEOUT)
 
         # 7. Init DatasetManager
         from app.services.dataset_manager import DatasetManager
         self.dataset_manager = DatasetManager(duckdb_engine, db, self.registry, self.profiler)
 
         # 8. Log final state
-        tables = duckdb_engine.tables()
+        tables = await asyncio.to_thread(duckdb_engine.tables)
         logger.info({"event": "bootstrap_complete", "tables": tables})
 
         self._initialized = True
 
-    async def _ensure_users_table(self, db: object) -> None:
+    async def _ensure_users_table(self, db: Database) -> None:
         """Create users table in MySQL if it doesn't exist."""
         users_ddl = (
             "CREATE TABLE IF NOT EXISTS users ("
@@ -91,10 +102,14 @@ class Bootstrap:
             await db.execute(users_ddl)
             logger.info({"event": "users_table_ready"})
         except Exception as exc:
-            logger.warning({"event": "users_table_exists", "detail": str(exc)[:100]})
+            logger.warning({"event": "users_table_exists", "detail": truncate_error(exc, 100)})
 
-    async def _ensure_datasets_table(self, db: object) -> None:
-        """Create datasets table in MySQL if it doesn't exist."""
+    async def _ensure_datasets_table(self, db: Database) -> None:
+        """Create datasets table in MySQL if it doesn't exist.
+
+        Schema migrations should be managed via Alembic:
+            alembic upgrade head
+        """
         sql_path = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "..", "scripts", "schema_datasets.sql"
         )
@@ -105,22 +120,14 @@ class Bootstrap:
                 await db.execute(ddl)
                 logger.info({"event": "datasets_table_ready"})
             except Exception as exc:
-                logger.warning({"event": "datasets_table_exists", "detail": str(exc)[:100]})
+                logger.warning({"event": "datasets_table_exists", "detail": truncate_error(exc, 100)})
 
-        # Migrate: add user_id to datasets
-        try:
-            await db.execute("ALTER TABLE datasets ADD COLUMN user_id VARCHAR(36)")
-        except Exception as exc:
-            if "Duplicate column" not in str(exc):
-                logger.warning({"event": "migrate_add_user_id_datasets", "error": str(exc)[:200]})
-        try:
-            await db.execute("CREATE INDEX idx_datasets_user ON datasets (user_id)")
-        except Exception as exc:
-            if "Duplicate key name" not in str(exc):
-                logger.warning({"event": "migrate_index_datasets_user", "error": str(exc)[:200]})
+    async def _ensure_chat_tables(self, db: Database) -> None:
+        """Create sessions and messages tables in MySQL if they don't exist.
 
-    async def _ensure_chat_tables(self, db: object) -> None:
-        """Create sessions and messages tables in MySQL if they don't exist."""
+        Schema migrations should be managed via Alembic:
+            alembic upgrade head
+        """
         sessions_ddl = (
             "CREATE TABLE IF NOT EXISTS sessions ("
             "  id VARCHAR(64) PRIMARY KEY,"
@@ -152,26 +159,7 @@ class Bootstrap:
             await db.execute(messages_ddl)
             logger.info({"event": "chat_tables_ready"})
         except Exception as exc:
-            logger.warning({"event": "chat_tables_exists", "detail": str(exc)[:100]})
-
-        # Migrate: add evidence column for existing databases
-        try:
-            await db.execute("ALTER TABLE messages ADD COLUMN evidence JSON")
-        except Exception as exc:
-            if "Duplicate column" not in str(exc):
-                logger.warning({"event": "migrate_add_evidence", "error": str(exc)[:200]})
-
-        # Migrate: add user_id to sessions
-        try:
-            await db.execute("ALTER TABLE sessions ADD COLUMN user_id VARCHAR(36)")
-        except Exception as exc:
-            if "Duplicate column" not in str(exc):
-                logger.warning({"event": "migrate_add_user_id_sessions", "error": str(exc)[:200]})
-        try:
-            await db.execute("CREATE INDEX idx_sessions_user ON sessions (user_id)")
-        except Exception as exc:
-            if "Duplicate key name" not in str(exc):
-                logger.warning({"event": "migrate_index_sessions_user", "error": str(exc)[:200]})
+            logger.warning({"event": "chat_tables_exists", "detail": truncate_error(exc, 100)})
 
         # Create mysql_connections table
         connections_ddl = (
@@ -192,9 +180,13 @@ class Bootstrap:
         try:
             await db.execute(connections_ddl)
         except Exception as exc:
-            logger.warning({"event": "mysql_connections_table", "error": str(exc)[:200]})
+            logger.warning({"event": "mysql_connections_table", "error": truncate_error(exc)})
 
-    async def _load_datasets_from_mysql(self, db: object, duckdb_engine: object) -> None:
+        logger.info(
+            {"event": "schema_migration_hint", "message": "For schema changes, use: alembic upgrade head"}
+        )
+
+    async def _load_datasets_from_mysql(self, db: Database, duckdb_engine: DuckDBEngine) -> None:
         """Load dataset metadata from MySQL into the registry."""
         import json as _json
 
@@ -205,10 +197,10 @@ class Bootstrap:
                 "FROM datasets WHERE status = 'ready'"
             )
         except Exception as exc:
-            logger.warning({"event": "load_datasets_query_failed", "error": str(exc)[:200]})
+            logger.warning({"event": "load_datasets_query_failed", "error": truncate_error(exc)})
             rows = []
 
-        existing_tables = set(duckdb_engine.tables())
+        existing_tables = set(await asyncio.to_thread(duckdb_engine.tables))
         loaded = 0
 
         for row in rows:
@@ -222,7 +214,7 @@ class Bootstrap:
                 try:
                     columns_meta = _json.loads(columns_meta)
                 except Exception as exc:
-                    logger.warning({"event": "parse_columns_meta_failed", "table": table_name, "error": str(exc)[:200]})
+                    logger.warning({"event": "parse_columns_meta_failed", "table": table_name, "error": truncate_error(exc)})
                     columns_meta = []
 
             self.registry.register(
@@ -236,6 +228,11 @@ class Bootstrap:
             loaded += 1
 
         logger.info({"event": "datasets_loaded_from_mysql", "count": loaded})
+
+
+async def ensure_bootstrap() -> None:
+    """Ensure bootstrap has run. Safe to call multiple times."""
+    await bootstrap.run()
 
 
 # Module-level singleton

@@ -16,8 +16,8 @@ from datetime import datetime, timezone
 
 async def _build_and_run():
     """Build the Workflow graph and run the benchmark."""
-    from evaluation import runner
     from app.core.deps import app_ctx
+    from evaluation import runner
 
     # Ensure benchmark datasets are loaded into DuckDB before running.
     ctx = await app_ctx.ensure_initialized()

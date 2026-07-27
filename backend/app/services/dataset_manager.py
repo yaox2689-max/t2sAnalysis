@@ -15,13 +15,20 @@ Usage:
     await manager.delete_dataset(dataset.id)
 """
 
+import asyncio
 import json
 import logging
 import os
 import uuid
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
+from app.core.protocols import (
+    DatasetRegistryProtocol,
+    DuckDBEngineProtocol,
+    SchemaProfilerProtocol,
+)
+from app.core.utils import truncate_error
 from app.tools.column_cleaner import clean_column_names, generate_table_name
 
 logger = logging.getLogger("t2s_analysis")
@@ -59,10 +66,10 @@ class DatasetManager:
 
     def __init__(
         self,
-        duckdb_engine: object,
-        mysql_db: object = None,
-        registry: object = None,
-        profiler: object = None,
+        duckdb_engine: DuckDBEngineProtocol,
+        mysql_db: Any = None,
+        registry: DatasetRegistryProtocol = None,
+        profiler: SchemaProfilerProtocol = None,
     ) -> None:
         self._engine = duckdb_engine
         self._db = mysql_db
@@ -99,7 +106,7 @@ class DatasetManager:
         for ds in datasets:
             ds.user_id = user_id
             ds.status = "uploading"
-            ds.profile_meta = self._generate_profile(ds.table_name)
+            ds.profile_meta = await self._generate_profile(ds.table_name)
             ds.status = "ready"
 
             await self._persist_to_mysql(ds)
@@ -194,13 +201,8 @@ class DatasetManager:
             table_name = generate_table_name(original_name, sheet_name)
             dataset_id = str(uuid.uuid4())
 
-            # Import into DuckDB — register DataFrame first
-            self._engine.execute(f'DROP TABLE IF EXISTS "{table_name}"')
-            self._engine.conn.register("_tmp_df", df)
-            self._engine.execute(
-                f'CREATE TABLE "{table_name}" AS SELECT * FROM _tmp_df'
-            )
-            self._engine.conn.unregister("_tmp_df")
+            # Import into DuckDB — run sync DuckDB ops in a thread
+            await asyncio.to_thread(self._import_df_to_duckdb, table_name, df)
 
             # Build column metadata
             columns_meta = []
@@ -253,36 +255,10 @@ class DatasetManager:
         table_name = generate_table_name(original_name)
         dataset_id = str(uuid.uuid4())
 
-        # Import directly with DuckDB
-        self._engine.execute(f'DROP TABLE IF EXISTS "{table_name}"')
-        self._engine.execute(
-            f"CREATE TABLE \"{table_name}\" AS SELECT * FROM read_csv('{file_path}', header=true, auto_detect=true)"
+        # Run all sync DuckDB operations in a thread
+        columns_meta, row_count = await asyncio.to_thread(
+            self._import_csv_sync, table_name, file_path
         )
-
-        # Get column info from DuckDB
-        desc = self._engine.execute(f'DESCRIBE "{table_name}"').fetchall()
-        columns_meta = []
-        for row in desc:
-            col_name = row[0]
-            col_type = row[1]
-            columns_meta.append({
-                "name": col_name,
-                "original_name": col_name,
-                "type": col_type,
-            })
-
-        # Get row count
-        count_result = self._engine.execute(f'SELECT COUNT(*) FROM "{table_name}"').fetchone()
-        row_count = count_result[0] if count_result else 0
-
-        # Truncate if needed (CSV can be large)
-        if row_count > MAX_ROWS:
-            self._engine.execute(
-                f'CREATE OR REPLACE TABLE "{table_name}" AS '
-                f'SELECT * FROM "{table_name}" LIMIT {MAX_ROWS}'
-            )
-            row_count = MAX_ROWS
-            logger.warning({"event": "dataset_truncated", "table": table_name, "max_rows": MAX_ROWS})
 
         dataset = DatasetInfo(
             id=dataset_id,
@@ -310,7 +286,7 @@ class DatasetManager:
 
     async def delete_dataset(self, table_name: str) -> None:
         """Delete a dataset: DROP TABLE + unregister + mark deleted in MySQL."""
-        self._engine.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+        await asyncio.to_thread(self._drop_table_sync, table_name)
 
         if self._registry:
             self._registry.unregister(table_name)
@@ -361,7 +337,7 @@ class DatasetManager:
             )
             logger.info({"event": "dataset_persisted", "table": ds.table_name})
         except Exception as exc:
-            logger.error({"event": "dataset_persist_failed", "table": ds.table_name, "error": str(exc)})
+            logger.error({"event": "dataset_persist_failed", "table": ds.table_name, "error": truncate_error(exc)})
 
     async def _update_status_mysql(self, table_name: str, status: str) -> None:
         """Update dataset status in MySQL."""
@@ -373,17 +349,70 @@ class DatasetManager:
                 {"status": status, "table": table_name},
             )
         except Exception as exc:
-            logger.error({"event": "dataset_status_update_failed", "table": table_name, "error": str(exc)})
+            logger.error({"event": "dataset_status_update_failed", "table": table_name, "error": truncate_error(exc)})
 
-    def _generate_profile(self, table_name: str) -> Optional[dict]:
-        """Generate data profile for a table."""
+    async def _generate_profile(self, table_name: str) -> Optional[dict]:
+        """Generate data profile for a table (async — delegates to profiler)."""
         if self._profiler is None:
             return None
         try:
-            return self._profiler.profile(table_name)
+            return await self._profiler.profile(table_name)
         except Exception as exc:
-            logger.warning({"event": "profile_generation_failed", "table": table_name, "error": str(exc)})
+            logger.warning({"event": "profile_generation_failed", "table": table_name, "error": truncate_error(exc)})
             return None
+
+    # ── Sync DuckDB helpers (run via asyncio.to_thread) ─────────
+
+    def _import_df_to_duckdb(self, table_name: str, df: Any) -> None:
+        """Import a pandas DataFrame into a DuckDB table (sync, blocking)."""
+        self._engine.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+        self._engine.conn.register("_tmp_df", df)
+        self._engine.execute(
+            f'CREATE TABLE "{table_name}" AS SELECT * FROM _tmp_df'
+        )
+        self._engine.conn.unregister("_tmp_df")
+
+    def _import_csv_sync(
+        self, table_name: str, file_path: str
+    ) -> tuple[list[dict], int]:
+        """Import a CSV file into DuckDB and return (columns_meta, row_count).
+
+        Runs synchronously — must be called via ``asyncio.to_thread``.
+        """
+        self._engine.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+        self._engine.execute(
+            f"CREATE TABLE \"{table_name}\" AS "
+            f"SELECT * FROM read_csv('{file_path}', header=true, auto_detect=true)"
+        )
+
+        desc = self._engine.execute(f'DESCRIBE "{table_name}"').fetchall()
+        columns_meta = [
+            {"name": row[0], "original_name": row[0], "type": row[1]}
+            for row in desc
+        ]
+
+        count_result = self._engine.execute(
+            f'SELECT COUNT(*) FROM "{table_name}"'
+        ).fetchone()
+        row_count = count_result[0] if count_result else 0
+
+        if row_count > MAX_ROWS:
+            self._engine.execute(
+                f'CREATE OR REPLACE TABLE "{table_name}" AS '
+                f'SELECT * FROM "{table_name}" LIMIT {MAX_ROWS}'
+            )
+            row_count = MAX_ROWS
+            logger.warning({
+                "event": "dataset_truncated",
+                "table": table_name,
+                "max_rows": MAX_ROWS,
+            })
+
+        return columns_meta, row_count
+
+    def _drop_table_sync(self, table_name: str) -> None:
+        """DROP TABLE IF EXISTS (sync, blocking)."""
+        self._engine.execute(f'DROP TABLE IF EXISTS "{table_name}"')
 
     @staticmethod
     def _pandas_to_sql_type(pd_type: str) -> str:

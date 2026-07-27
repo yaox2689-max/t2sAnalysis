@@ -52,10 +52,12 @@ class Settings(BaseSettings):
     LLM_API_KEY: str = ""
     LLM_MODEL: str = "deepseek-v4-pro"
     LLM_BASE_URL: str = "https://api.deepseek.com"
+    LLM_CONNECT_TIMEOUT: int = 10
 
     # ── SQL Executor ─────────────────────────────────────
     SQL_TIMEOUT: int = 10
     SQL_MAX_ROWS: int = 500
+    DEFAULT_MAX_RETRIES: int = 3
 
     # ── Auth ────────────────────────────────────────────
     JWT_SECRET_KEY: str = _DEV_SECRET
@@ -71,6 +73,8 @@ class Settings(BaseSettings):
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
+    REDIS_CONNECT_TIMEOUT: int = 3
+    CACHE_TTL_SECONDS: int = 3600
 
     # ── LangSmith Tracing（可选）────────────────────────
     # 填写 API Key 即启用，留空则不接入

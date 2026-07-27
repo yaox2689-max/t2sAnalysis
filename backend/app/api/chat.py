@@ -8,7 +8,6 @@ import json
 import logging
 import time
 import uuid
-from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
@@ -18,44 +17,19 @@ from pydantic import BaseModel
 
 from app.core.auth import get_current_user
 from app.core.config import settings
-from app.core.database import Database
+from app.core.database import db
 from app.core.deps import app_ctx
 from app.core.tracing import new_trace_id
-from app.core.utils import sanitize_float
+from app.core.utils import sanitize_float, truncate_error
 from app.services.auth_service import UserOut
 from app.services.chat_service import (
+    _SafeEncoder,
+    persist_conversation,
     run_post_workflow_tools,
-    save_assistant_message,
-    save_user_message,
-    update_session_title_if_first,
 )
 from main import limiter
 
 logger = logging.getLogger("t2s_analysis")
-
-
-class _SafeEncoder(json.JSONEncoder):
-    """Handle types that the default encoder cannot serialise (Decimal, date, …)."""
-
-    def default(self, o: object) -> object:
-        if isinstance(o, Decimal):
-            return float(o)
-        if isinstance(o, (datetime, date)):
-            return o.isoformat()
-        return super().default(o)
-
-    def encode(self, o: object) -> str:
-        return super().encode(self._sanitise(o))
-
-    def _sanitise(self, o: object) -> object:
-        """Recursively replace NaN / Inf with None (null in JSON)."""
-        if isinstance(o, float):
-            return sanitize_float(o)
-        if isinstance(o, dict):
-            return {k: self._sanitise(v) for k, v in o.items()}
-        if isinstance(o, list):
-            return [self._sanitise(v) for v in o]
-        return o
 
 
 def _convert_decimals(rows: list[dict]) -> list[dict]:
@@ -72,15 +46,27 @@ def _convert_decimals(rows: list[dict]) -> list[dict]:
     return result
 
 
-async def _get_db() -> Database:
-    """Ensure database is initialised (via bootstrap) and return the global instance."""
-    from app.bootstrap import bootstrap
-    if not bootstrap._initialized:
-        await bootstrap.run()
-    from app.core.database import db
-    if not db.is_initialized:
-        db.init()
-    return db
+async def _verify_session(session_id: str, user_id: str) -> None:
+    """Verify session ownership, raise 404 if not found."""
+    sess = await db.execute(
+        "SELECT id FROM sessions WHERE id = :sid AND user_id = :uid",
+        {"sid": session_id, "uid": user_id},
+    )
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+
+async def _load_history(session_id: str) -> list[dict]:
+    """Load last 20 messages for conversation context."""
+    history_rows = await db.execute(
+        "SELECT role, content FROM messages "
+        "WHERE session_id = :sid AND role IN ('user', 'assistant') "
+        "ORDER BY id DESC LIMIT 20",
+        {"sid": session_id},
+    )
+    history_rows.reverse()
+    return [{"role": r["role"], "content": r["content"]} for r in history_rows]
+
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -120,7 +106,8 @@ class ChatResponse(BaseModel):
 @router.post("/sessions")
 async def create_session(user: UserOut = Depends(get_current_user)):
     """Create a new chat session."""
-    db = await _get_db()
+    from app.bootstrap import bootstrap
+    await bootstrap.run()
     session_id = f"ses_{uuid.uuid4().hex[:12]}"
     await db.execute(
         "INSERT INTO sessions (id, title, user_id) VALUES (:id, :title, :uid)",
@@ -132,7 +119,8 @@ async def create_session(user: UserOut = Depends(get_current_user)):
 @router.get("/sessions")
 async def list_sessions(user: UserOut = Depends(get_current_user)):
     """List all sessions for the current user, newest first."""
-    db = await _get_db()
+    from app.bootstrap import bootstrap
+    await bootstrap.run()
     rows = await db.execute(
         "SELECT id, title, created_at, updated_at FROM sessions "
         "WHERE user_id = :uid ORDER BY updated_at DESC",
@@ -144,13 +132,9 @@ async def list_sessions(user: UserOut = Depends(get_current_user)):
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str, user: UserOut = Depends(get_current_user)):
     """Get all messages for a session (owned by current user)."""
-    db = await _get_db()
-    sess = await db.execute(
-        "SELECT id FROM sessions WHERE id = :sid AND user_id = :uid",
-        {"sid": session_id, "uid": user.id},
-    )
-    if not sess:
-        raise HTTPException(status_code=404, detail="Session not found")
+    from app.bootstrap import bootstrap
+    await bootstrap.run()
+    await _verify_session(session_id, user.id)
     rows = await db.execute(
         "SELECT id, role, content, sql_text, chart_type, echarts_option, "
         "insight, `columns`, rows_data, evidence, elapsed_ms, created_at "
@@ -170,13 +154,9 @@ async def get_session(session_id: str, user: UserOut = Depends(get_current_user)
 @router.delete("/sessions/{session_id}")
 async def delete_session(session_id: str, user: UserOut = Depends(get_current_user)):
     """Delete a session and all its messages (owned by current user)."""
-    db = await _get_db()
-    sess = await db.execute(
-        "SELECT id FROM sessions WHERE id = :sid AND user_id = :uid",
-        {"sid": session_id, "uid": user.id},
-    )
-    if not sess:
-        raise HTTPException(status_code=404, detail="Session not found")
+    from app.bootstrap import bootstrap
+    await bootstrap.run()
+    await _verify_session(session_id, user.id)
     await db.execute(
         "DELETE FROM messages WHERE session_id = :sid", {"sid": session_id}
     )
@@ -200,23 +180,12 @@ async def chat(request: Request, req: ChatRequest, user: UserOut = Depends(get_c
     ctx = await app_ctx.ensure_initialized()
 
     # 1. Verify session exists and belongs to user
-    db = await _get_db()
-    sess = await db.execute(
-        "SELECT id FROM sessions WHERE id = :sid AND user_id = :uid",
-        {"sid": req.session_id, "uid": user.id},
-    )
-    if not sess:
-        raise HTTPException(status_code=404, detail="Session not found")
+    from app.bootstrap import bootstrap
+    await bootstrap.run()
+    await _verify_session(req.session_id, user.id)
 
     # 2. Load recent conversation history for multi-turn context
-    history_rows = await db.execute(
-        "SELECT role, content FROM messages "
-        "WHERE session_id = :sid AND role IN ('user', 'assistant') "
-        "ORDER BY id DESC LIMIT 20",
-        {"sid": req.session_id},
-    )
-    history_rows.reverse()  # chronological order
-    history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
+    history = await _load_history(req.session_id)
 
     start = time.perf_counter()
 
@@ -236,7 +205,7 @@ async def chat(request: Request, req: ChatRequest, user: UserOut = Depends(get_c
         })
     except Exception as exc:
         elapsed_ms = (time.perf_counter() - start) * 1000
-        logger.error({"event": "workflow_error", "error": str(exc), "session_id": req.session_id})
+        logger.error({"event": "workflow_error", "error": truncate_error(exc), "session_id": req.session_id})
         await db.execute(
             "INSERT INTO messages (session_id, role, content, elapsed_ms) "
             "VALUES (:sid, 'user', :content, 0)",
@@ -294,15 +263,24 @@ async def chat(request: Request, req: ChatRequest, user: UserOut = Depends(get_c
         ctx, query_result, req.question, task_plan,
     )
 
-    # 6. Save messages
-    await save_user_message(db, req.session_id, req.question)
-    message_id = await save_assistant_message(
-        db, req.session_id, sql, chart_type, chart_option,
-        insight_text, columns, rows, evidence_data, elapsed_ms, _SafeEncoder,
+    # 6. Save messages and update session title
+    result_dict = {
+        "sql": sql,
+        "chart_type": chart_type,
+        "echarts_option": chart_option,
+        "insight": insight_text,
+        "columns": columns,
+        "rows": rows,
+        "evidence": evidence_data,
+        "elapsed_ms": elapsed_ms,
+    }
+    message_id = await persist_conversation(
+        session_id=req.session_id,
+        user_id=user.id,
+        question=req.question,
+        result=result_dict,
+        history=history,
     )
-
-    # 7. Update session title (first message only)
-    await update_session_title_if_first(db, req.session_id, req.question)
 
     return ChatResponse(
         message_id=message_id,
@@ -336,24 +314,13 @@ _NODE_LABELS: dict[str, str] = {
 async def chat_stream(request: Request, req: ChatRequest, user: UserOut = Depends(get_current_user)):
     """SSE endpoint that streams progress events during workflow execution."""
     ctx = await app_ctx.ensure_initialized()
-    db = await _get_db()
+    from app.bootstrap import bootstrap
+    await bootstrap.run()
 
-    sess = await db.execute(
-        "SELECT id FROM sessions WHERE id = :sid AND user_id = :uid",
-        {"sid": req.session_id, "uid": user.id},
-    )
-    if not sess:
-        raise HTTPException(status_code=404, detail="Session not found")
+    await _verify_session(req.session_id, user.id)
 
     # Load conversation history
-    history_rows = await db.execute(
-        "SELECT role, content FROM messages "
-        "WHERE session_id = :sid AND role IN ('user', 'assistant') "
-        "ORDER BY id DESC LIMIT 20",
-        {"sid": req.session_id},
-    )
-    history_rows.reverse()
-    history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
+    history = await _load_history(req.session_id)
 
     async def event_generator():
         trace_id = new_trace_id()
@@ -389,7 +356,7 @@ async def chat_stream(request: Request, req: ChatRequest, user: UserOut = Depend
                     final_state.update(update)
         except Exception as exc:
             elapsed_ms = (time.perf_counter() - start) * 1000
-            logger.error({"event": "chat_stream_error", "error": str(exc)})
+            logger.error({"event": "chat_stream_error", "error": truncate_error(exc)})
             yield f'data: {json.dumps({"type": "error", "message": "处理失败，请稍后重试"}, ensure_ascii=False)}\n\n'
             return
 
@@ -421,15 +388,24 @@ async def chat_stream(request: Request, req: ChatRequest, user: UserOut = Depend
             ctx, query_result, req.question, task_plan,
         )
 
-        # Save messages
-        await save_user_message(db, req.session_id, req.question)
-        message_id = await save_assistant_message(
-            db, req.session_id, sql, chart_type, chart_option,
-            insight_text, columns, rows, evidence_data, elapsed_ms, _SafeEncoder,
+        # Save messages and update session title
+        result_dict = {
+            "sql": sql,
+            "chart_type": chart_type,
+            "echarts_option": chart_option,
+            "insight": insight_text,
+            "columns": columns,
+            "rows": rows,
+            "evidence": evidence_data,
+            "elapsed_ms": elapsed_ms,
+        }
+        message_id = await persist_conversation(
+            session_id=req.session_id,
+            user_id=user.id,
+            question=req.question,
+            result=result_dict,
+            history=history,
         )
-
-        # Update session title (first message only)
-        await update_session_title_if_first(db, req.session_id, req.question)
 
         # Yield final result
         result_payload = {

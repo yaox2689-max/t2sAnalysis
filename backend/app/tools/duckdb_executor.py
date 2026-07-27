@@ -10,19 +10,21 @@ Usage:
     result = await executor.execute("SELECT * FROM orders LIMIT 5")
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import re
 import time
+from typing import Any
 
-from app.core.utils import sanitize_float
+import pandas as pd
+
+from app.core.config import settings
 from app.models.query import QueryResult
 from app.tools.sql_safety import check_write_blocked
 
 logger = logging.getLogger("t2s_analysis")
-
-# Safety limits
-MAX_ROWS = 500
 
 
 class DuckDBExecutionError(Exception):
@@ -37,16 +39,34 @@ class DuckDBExecutor:
     """Execute SQL queries against DuckDB and return QueryResult."""
 
     def __init__(
-        self, duckdb_engine: object, max_rows: int = MAX_ROWS, timeout: int = 10,
+        self,
+        duckdb_engine: Any,
+        max_rows: int = settings.SQL_MAX_ROWS,
+        timeout: int = settings.SQL_TIMEOUT,
     ) -> None:
         self._engine = duckdb_engine
         self.max_rows = max_rows
         self.timeout = timeout
 
-    def _run_query(self, sql: str):
+    def _run_query(self, sql: str) -> pd.DataFrame:
         """Synchronous DuckDB query — runs in a thread."""
         result = self._engine.execute(sql)
         return result.fetchdf()
+
+    def _preview_sync(self, table_name: str, limit: int = 5) -> pd.DataFrame:
+        """Synchronous preview — runs in a thread."""
+        safe = table_name.replace('"', '""')
+        result = self._engine.execute(f'SELECT * FROM "{safe}" LIMIT {limit}')
+        return result.fetchdf()
+
+    async def preview_table(self, table_name: str, limit: int = 5) -> pd.DataFrame:
+        """Return a preview DataFrame for the given table.
+
+        Args:
+            table_name: Name of the DuckDB table.
+            limit: Maximum rows to return.
+        """
+        return await asyncio.to_thread(self._preview_sync, table_name, limit)
 
     async def execute(self, sql: str, **kwargs) -> QueryResult:
         """Execute SQL and return a QueryResult.
@@ -54,13 +74,10 @@ class DuckDBExecutor:
         Raises DuckDBWriteBlockedError on write operations.
         Raises DuckDBExecutionError on any database error or timeout.
         """
-        # Safety check: block write operations
         warning = check_write_blocked(sql)
         if warning:
             raise DuckDBWriteBlockedError(f"Write operation blocked: {warning}")
 
-        # Normalize: convert backtick-quoted identifiers to double-quote
-        # DuckDB handles double-quoted Unicode identifiers more reliably
         sql = re.sub(r'`([^`]+)`', r'"\1"', sql)
 
         start = time.perf_counter()
@@ -78,25 +95,12 @@ class DuckDBExecutor:
             raise DuckDBExecutionError(str(exc)) from exc
 
         elapsed_ms = (time.perf_counter() - start) * 1000
-
         columns = list(df.columns)
         rows = df.to_dict("records")
 
-        # Clean NaN / Inf values → None (JSON-safe)
-        rows = [
-            {k: sanitize_float(v) for k, v in row.items()}
-            for row in rows
-        ]
-        truncated = False
-
-        if len(rows) > self.max_rows:
-            rows = rows[:self.max_rows]
-            truncated = True
-
-        return QueryResult(
+        return QueryResult.from_rows(
             columns=columns,
             rows=rows,
-            truncated=truncated,
-            row_count=len(rows),
-            elapsed_ms=round(elapsed_ms, 2),
+            max_rows=self.max_rows,
+            elapsed_ms=elapsed_ms,
         )

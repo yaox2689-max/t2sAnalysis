@@ -20,8 +20,8 @@ from typing import Optional
 
 import sqlglot
 
+from app.core.llm_client import LLMClient
 from app.core.prompt_loader import prompt_loader
-from app.core.utils import create_llm_client
 from app.models.task import GeneratedSQL, SchemaContext, TaskPlan
 
 
@@ -69,16 +69,9 @@ def _check_schema_valid(sql: str, schema: SchemaContext) -> bool:
 class SQLGenerator:
     """Generates SQL from a TaskPlan + SchemaContext using LLM."""
 
-    def __init__(
-        self,
-        api_key: str,
-        model: str,
-        base_url: Optional[str] = None,
-        http_client: Optional[object] = None,
-    ) -> None:
-        self.client = create_llm_client(api_key, base_url, http_client=http_client)
-        self.model = model
-        self._system_prompt = prompt_loader.load("sql_agent/sql_generation")
+    def __init__(self, llm_client: LLMClient) -> None:
+        self._llm_client = llm_client
+        self._prompt = prompt_loader.load("sql_agent/sql_generation")
 
     async def generate(
         self,
@@ -101,7 +94,7 @@ class SQLGenerator:
             system_prompt = prompt_text
         else:
             schema_text = _build_schema_text(schema_context)
-            system_prompt = self._system_prompt
+            system_prompt = self._prompt
 
         user_prompt = (
             f"## Task Plan\n\n"
@@ -118,16 +111,11 @@ class SQLGenerator:
         if schema_text:
             user_prompt += f"## Schema Context\n\n{schema_text}"
 
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+        raw = await self._llm_client.call(
+            system_prompt=system_prompt,
+            user_msg=user_prompt,
             temperature=0.1,
         )
-
-        raw = response.choices[0].message.content or ""
         parsed = self._parse(raw, schema_context)
         return parsed
 

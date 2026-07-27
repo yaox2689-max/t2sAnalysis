@@ -243,4 +243,93 @@ export async function deleteDataset(tableName: string): Promise<void> {
   await api.delete(`/datasets/${tableName}`);
 }
 
+// ── Connection API ─────────────────────────────────────
+
+export interface ConnectionConfig {
+  display_name: string;
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  password: string;
+}
+
+export interface ConnectionInfo {
+  id: string;
+  display_name: string;
+  host: string;
+  port: number;
+  database: string;
+  status: string;
+  table_count: number;
+  created_at: string;
+}
+
+export async function testConnection(
+  config: ConnectionConfig,
+): Promise<{ success: boolean; count?: number; error?: string }> {
+  const res = await api.post("/connections/test", config);
+  return res.data;
+}
+
+export async function saveConnection(
+  config: ConnectionConfig,
+): Promise<ConnectionInfo & { count: number }> {
+  const res = await api.post("/connections", config);
+  return res.data;
+}
+
+export async function listConnections(): Promise<{
+  connections: ConnectionInfo[];
+}> {
+  const res = await api.get("/connections");
+  return res.data;
+}
+
+export async function deleteConnection(id: string): Promise<void> {
+  await api.delete(`/connections/${id}`);
+}
+
+// ── Auth API ───────────────────────────────────────────
+
+export interface AuthResponse {
+  access_token: string;
+  user: UserInfo;
+}
+
+export interface UserInfo {
+  id: string;
+  username: string;
+  display_name: string | null;
+}
+
+export async function login(
+  username: string,
+  password: string,
+): Promise<AuthResponse> {
+  const res = await api.post<AuthResponse>("/auth/login", {
+    username,
+    password,
+  });
+  return res.data;
+}
+
+export async function register(
+  username: string,
+  password: string,
+  displayName?: string,
+): Promise<AuthResponse> {
+  const res = await api.post<AuthResponse>("/auth/register", {
+    username,
+    password,
+    display_name: displayName,
+  });
+  return res.data;
+}
+
+export async function getMe(): Promise<UserInfo> {
+  const res = await api.get<UserInfo>("/auth/me");
+  return res.data;
+}
+
 export default api;

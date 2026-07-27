@@ -27,6 +27,8 @@ dependencies = [
     "python-jose[cryptography]>=3.3.0",
     "cryptography>=41.0.0",
     "slowapi>=0.1.9",
+    "tenacity>=8.0.0",
+    "alembic>=1.13.0",
 ]
 
 [project.optional-dependencies]

@@ -12,7 +12,7 @@ Usage:
 """
 
 import os
-from typing import Optional
+from typing import Any, Optional
 
 _PROMPT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "prompts")
 
@@ -32,7 +32,7 @@ class PromptLoader:
         self._base_dir = base_dir or _PROMPT_DIR
         self._cache: dict[str, str] = {}
 
-    def load(self, name: str, **variables: object) -> str:
+    def load(self, name: str, **variables: Any) -> str:
         """Load a prompt file by its dotted name, optionally substitute variables.
 
         Variable substitution uses ``str.replace`` for ``{{ var }}`` placeholders.

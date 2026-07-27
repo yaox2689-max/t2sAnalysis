@@ -10,15 +10,17 @@ This is a single LLM summarizer call.  It does NOT:
 Usage:
     from app.tools.insight import InsightTool
 
-    tool = InsightTool(api_key="...", model="deepseek-chat")
+    tool = InsightTool(llm_client=llm_client)
     result = await tool.summarize(query_result, "月销售额趋势")
 """
 
 import json
+import re
 from typing import Optional
 
+from app.core.llm_client import LLMClient
 from app.core.prompt_loader import prompt_loader
-from app.core.utils import create_llm_client, format_query_result
+from app.core.utils import format_query_result
 from app.models.query import QueryResult
 
 
@@ -54,15 +56,8 @@ def _format_result(result: QueryResult) -> str:
 class InsightTool:
     """Generate natural-language business insights from query results."""
 
-    def __init__(
-        self,
-        api_key: str,
-        model: str,
-        base_url: Optional[str] = None,
-        http_client: Optional[object] = None,
-    ) -> None:
-        self._client = create_llm_client(api_key, base_url, http_client=http_client)
-        self._model = model
+    def __init__(self, llm_client: LLMClient) -> None:
+        self._llm_client = llm_client
         self._prompt = _load_prompt()
 
     async def summarize(
@@ -86,22 +81,17 @@ class InsightTool:
 
         user_msg = "\n\n".join(user_parts)
 
-        response = await self._client.chat.completions.create(
-            model=self._model,
-            messages=[
-                {"role": "system", "content": self._prompt},
-                {"role": "user", "content": user_msg},
-            ],
+        raw = await self._llm_client.call(
+            system_prompt=self._prompt,
+            user_msg=user_msg,
             temperature=0.3,
         )
-        raw = response.choices[0].message.content or ""
         return self._parse(raw)
 
     @staticmethod
     def _parse(raw: str) -> InsightResult:
         """Parse LLM response into an InsightResult."""
         # Try extracting JSON from markdown code fence
-        import re
         m = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', raw)
         if m:
             raw = m.group(1)

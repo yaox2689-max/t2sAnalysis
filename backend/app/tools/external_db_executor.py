@@ -8,19 +8,20 @@ Usage:
     result = await executor.execute("SELECT * FROM orders", connection_config)
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import time
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from app.core.utils import sanitize_float
+from app.core.config import settings
 from app.models.query import QueryResult
 from app.tools.sql_safety import check_write_blocked
 
 logger = logging.getLogger("t2s_analysis")
-
-MAX_ROWS = 500
 
 
 class ExternalDBError(Exception):
@@ -34,7 +35,7 @@ class ExternalDBWriteBlockedError(ExternalDBError):
 class ExternalDBExecutor:
     """Execute read-only SQL against external MySQL databases."""
 
-    def __init__(self, max_rows: int = MAX_ROWS, timeout: int = 10) -> None:
+    def __init__(self, max_rows: int = settings.SQL_MAX_ROWS, timeout: int = settings.SQL_TIMEOUT) -> None:
         self._engines: dict[str, AsyncEngine] = {}
         self.max_rows = max_rows
         self.timeout = timeout
@@ -61,7 +62,7 @@ class ExternalDBExecutor:
         engine = self._get_engine(cfg)
         async with engine.connect() as conn:
             result = await conn.execute(
-                __import__("sqlalchemy").text(
+                text(
                     "SELECT table_name FROM information_schema.tables "
                     "WHERE table_schema = :db AND table_type = 'BASE TABLE'"
                 ),
@@ -75,7 +76,7 @@ class ExternalDBExecutor:
         engine = self._get_engine(cfg)
         async with engine.connect() as conn:
             result = await conn.execute(
-                __import__("sqlalchemy").text(
+                text(
                     "SELECT table_name, column_name, data_type "
                     "FROM information_schema.columns "
                     "WHERE table_schema = :db ORDER BY table_name, ordinal_position"
@@ -96,8 +97,11 @@ class ExternalDBExecutor:
         key = self._engine_key(cfg)
         engine = self._engines.pop(key, None)
         if engine:
-            import asyncio
-            asyncio.get_event_loop().create_task(engine.dispose())
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.get_event_loop()
+            loop.create_task(engine.dispose())
 
     async def execute(self, sql: str, connection_config: dict) -> QueryResult:
         """Execute read-only SQL and return QueryResult."""
@@ -111,7 +115,7 @@ class ExternalDBExecutor:
         try:
             async with engine.connect() as conn:
                 result = await asyncio.wait_for(
-                    conn.execute(__import__("sqlalchemy").text(sql)),
+                    conn.execute(text(sql)),
                     timeout=self.timeout,
                 )
                 rows_raw = result.fetchall()
@@ -122,24 +126,11 @@ class ExternalDBExecutor:
             raise ExternalDBError(str(exc)) from exc
 
         elapsed_ms = (time.perf_counter() - start) * 1000
-
         rows = [dict(zip(columns, row)) for row in rows_raw]
 
-        # Clean NaN/Inf
-        rows = [
-            {k: sanitize_float(v) for k, v in row.items()}
-            for row in rows
-        ]
-
-        truncated = False
-        if len(rows) > self.max_rows:
-            rows = rows[:self.max_rows]
-            truncated = True
-
-        return QueryResult(
+        return QueryResult.from_rows(
             columns=columns,
             rows=rows,
-            truncated=truncated,
-            row_count=len(rows),
-            elapsed_ms=round(elapsed_ms, 2),
+            max_rows=self.max_rows,
+            elapsed_ms=elapsed_ms,
         )

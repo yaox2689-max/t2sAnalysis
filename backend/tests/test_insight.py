@@ -1,11 +1,13 @@
 """Tests for Insight Tool — result formatting, LLM summariser, edge cases."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
 from app.models.query import QueryResult
 from app.tools.insight import InsightTool, _format_result
+
+from .conftest import mock_llm_response
 
 # ── _format_result tests ────────────────────────────────
 
@@ -70,20 +72,14 @@ class TestParse:
 # ── summarize tests (mock LLM) ──────────────────────────
 
 
-def _mock_llm(content: str):
-    msg = MagicMock()
-    msg.content = content
-    choice = MagicMock()
-    choice.message = msg
-    resp = MagicMock()
-    resp.choices = [choice]
-    return resp
-
-
 @pytest.fixture
 def tool():
-    t = InsightTool(api_key="test", model="test-model", base_url="http://fake")
-    t._client.chat.completions.create = AsyncMock()
+    from unittest.mock import MagicMock
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock()
+    from app.core.llm_client import LLMClient
+    llm = LLMClient(client=mock_client, model="test-model")
+    t = InsightTool(llm_client=llm)
     return t
 
 
@@ -95,10 +91,10 @@ class TestSummarize:
             "test question",
         )
         assert result.summary == "数据不足，无法生成洞察"
-        tool._client.chat.completions.create.assert_not_called()
+        tool._llm_client._client.chat.completions.create.assert_not_called()
 
     async def test_calls_llm_with_prompt(self, tool):
-        tool._client.chat.completions.create.return_value = _mock_llm(
+        tool._llm_client._client.chat.completions.create.return_value = mock_llm_response(
             '{"summary": "Sales trend is positive.", "key_metrics": [], "confidence": 0.8}'
         )
         result = await tool.summarize(
@@ -108,13 +104,13 @@ class TestSummarize:
         assert result.summary == "Sales trend is positive."
         assert result.confidence == 0.8
         # Verify the LLM was called
-        call_args = tool._client.chat.completions.create.call_args
+        call_args = tool._llm_client._client.chat.completions.create.call_args
         assert call_args is not None
         messages = call_args[1]["messages"]
         assert any("销售额趋势" in m["content"] for m in messages)
 
     async def test_chart_type_included(self, tool):
-        tool._client.chat.completions.create.return_value = _mock_llm(
+        tool._llm_client._client.chat.completions.create.return_value = mock_llm_response(
             '{"summary": "Upward trend.", "confidence": 0.9}'
         )
         result = await tool.summarize(
@@ -123,7 +119,7 @@ class TestSummarize:
             chart_type="line",
         )
         assert result.summary == "Upward trend."
-        call_args = tool._client.chat.completions.create.call_args
+        call_args = tool._llm_client._client.chat.completions.create.call_args
         assert call_args is not None
         messages = call_args[1]["messages"]
         assert any("line" in m["content"] for m in messages)

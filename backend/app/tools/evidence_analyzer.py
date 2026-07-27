@@ -16,7 +16,7 @@ It does NOT:
 Usage:
     from app.tools.evidence_analyzer import EvidenceAnalyzer
 
-    analyzer = EvidenceAnalyzer(api_key="...", model="deepseek-chat")
+    analyzer = EvidenceAnalyzer(llm_client=llm_client)
     report = await analyzer.analyze(
         "为什么3月份销量下降",
         primary_result,
@@ -27,8 +27,9 @@ Usage:
 import json
 from typing import Optional
 
+from app.core.llm_client import LLMClient
 from app.core.prompt_loader import prompt_loader
-from app.core.utils import create_llm_client, format_query_result
+from app.core.utils import format_query_result
 from app.models.query import QueryResult
 
 
@@ -85,15 +86,8 @@ def _format_result(result: QueryResult, label: str = "primary") -> str:
 class EvidenceAnalyzer:
     """Analyse why a change happened, producing evidence-backed conclusions."""
 
-    def __init__(
-        self,
-        api_key: str,
-        model: str,
-        base_url: Optional[str] = None,
-        http_client: Optional[object] = None,
-    ) -> None:
-        self._client = create_llm_client(api_key, base_url, http_client=http_client)
-        self._model = model
+    def __init__(self, llm_client: LLMClient) -> None:
+        self._llm_client = llm_client
         self._prompt = _load_prompt()
 
     async def analyze(
@@ -114,15 +108,11 @@ class EvidenceAnalyzer:
 
         user_msg = self._build_prompt(question, primary_result, comparison_result)
 
-        response = await self._client.chat.completions.create(
-            model=self._model,
-            messages=[
-                {"role": "system", "content": self._prompt},
-                {"role": "user", "content": user_msg},
-            ],
+        raw = await self._llm_client.call(
+            system_prompt=self._prompt,
+            user_msg=user_msg,
             temperature=0.2,
         )
-        raw = response.choices[0].message.content or ""
         return self._parse(raw)
 
     def _build_prompt(

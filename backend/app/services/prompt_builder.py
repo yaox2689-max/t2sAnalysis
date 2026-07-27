@@ -11,9 +11,11 @@ Usage:
     markdown = builder.render(context)
 """
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import Optional
 
+from app.core.protocols import DuckDBEngineProtocol
 from app.services.dataset_registry import Catalog, ColumnSchema, TableSchema
 
 
@@ -59,16 +61,16 @@ _DEFAULT_TEMPLATE = """你是一个数据分析专家。根据用户的问题和
 class PromptBuilder:
     """Assemble SQL generation prompts from Catalog."""
 
-    def __init__(self, template: Optional[str] = None, duckdb_engine: object = None) -> None:
+    def __init__(self, template: Optional[str] = None, duckdb_engine: DuckDBEngineProtocol = None) -> None:
         self._template = template or _DEFAULT_TEMPLATE
         self._engine = duckdb_engine
 
-    def build_context(self, catalog: Catalog) -> PromptContext:
-        """Catalog → PromptContext (structured)."""
+    async def build_context(self, catalog: Catalog) -> PromptContext:
+        """Catalog -> PromptContext (structured, async — fetches sample rows from DuckDB)."""
         schema_parts = []
 
         for table in catalog.tables:
-            schema_parts.append(self._format_table(table))
+            schema_parts.append(await self._format_table(table))
 
         return PromptContext(
             schema="\n\n".join(schema_parts) if schema_parts else "",
@@ -86,13 +88,13 @@ class PromptBuilder:
             business_rules=business_rules,
         )
 
-    def build_prompt(self, catalog: Catalog) -> str:
-        """Convenience: Catalog → final prompt text in one call."""
-        context = self.build_context(catalog)
+    async def build_prompt(self, catalog: Catalog) -> str:
+        """Convenience: Catalog -> final prompt text in one call (async)."""
+        context = await self.build_context(catalog)
         return self.render(context)
 
-    def _format_table(self, table: TableSchema) -> str:
-        """Format a single table's schema + profile."""
+    async def _format_table(self, table: TableSchema) -> str:
+        """Format a single table's schema + profile (async — fetches sample rows)."""
         lines = []
 
         # Table header
@@ -112,7 +114,7 @@ class PromptBuilder:
             lines.append(self._format_column(col))
 
         # Sample rows (critical for LLM to understand column semantics)
-        sample_rows = self._fetch_sample_rows(table.table_name)
+        sample_rows = await self._fetch_sample_rows(table.table_name)
         if sample_rows:
             lines.append("")
             lines.append("Sample data (first 3 rows):")
@@ -149,10 +151,14 @@ class PromptBuilder:
 
         return "\n".join(parts)
 
-    def _fetch_sample_rows(self, table_name: str) -> list[dict]:
-        """Fetch first 3 rows from DuckDB for the prompt."""
+    async def _fetch_sample_rows(self, table_name: str) -> list[dict]:
+        """Fetch first 3 rows from DuckDB for the prompt (non-blocking)."""
         if self._engine is None:
             return []
+        return await asyncio.to_thread(self._fetch_sample_rows_sync, table_name)
+
+    def _fetch_sample_rows_sync(self, table_name: str) -> list[dict]:
+        """Synchronous DuckDB read — called via ``asyncio.to_thread``."""
         try:
             result = self._engine.execute(f'SELECT * FROM "{table_name}" LIMIT 3').fetchdf()
             return result.to_dict("records")

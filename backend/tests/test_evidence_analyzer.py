@@ -1,6 +1,6 @@
 """Tests for Evidence Analyzer — result formatting, LLM analysis, edge cases."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -9,6 +9,8 @@ from app.tools.evidence_analyzer import (
     EvidenceAnalyzer,
     _format_result,
 )
+
+from .conftest import mock_llm_response
 
 # ── _format_result tests ────────────────────────────────
 
@@ -65,16 +67,6 @@ class TestParse:
 # ── analyze tests (mock LLM) ────────────────────────────
 
 
-def _mock_llm(content: str):
-    msg = MagicMock()
-    msg.content = content
-    choice = MagicMock()
-    choice.message = msg
-    resp = MagicMock()
-    resp.choices = [choice]
-    return resp
-
-
 SAMPLE_PRIMARY = QueryResult(
     columns=["category", "sales"],
     rows=[{"category": "Electronics", "sales": 360},
@@ -89,8 +81,12 @@ SAMPLE_COMPARISON = QueryResult(
 
 @pytest.fixture
 def analyzer():
-    a = EvidenceAnalyzer(api_key="test", model="test-model", base_url="http://fake")
-    a._client.chat.completions.create = AsyncMock()
+    from unittest.mock import MagicMock
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock()
+    from app.core.llm_client import LLMClient
+    llm = LLMClient(client=mock_client, model="test-model")
+    a = EvidenceAnalyzer(llm_client=llm)
     return a
 
 
@@ -101,20 +97,20 @@ class TestAnalyze:
             "为什么销量下降", QueryResult(columns=["a"], rows=[]),
         )
         assert "数据不足" in report.conclusion
-        analyzer._client.chat.completions.create.assert_not_called()
+        analyzer._llm_client._client.chat.completions.create.assert_not_called()
 
     async def test_primary_only_no_comparison(self, analyzer):
         """Analyse with only primary data still produces a report."""
-        analyzer._client.chat.completions.create.return_value = _mock_llm(
+        analyzer._llm_client._client.chat.completions.create.return_value = mock_llm_response(
             '{"conclusion": "Electronics dominates sales.", "evidence_chain": []}'
         )
         report = await analyzer.analyze("What sold most?", SAMPLE_PRIMARY)
         assert report.conclusion == "Electronics dominates sales."
-        analyzer._client.chat.completions.create.assert_called_once()
+        analyzer._llm_client._client.chat.completions.create.assert_called_once()
 
     async def test_dual_result(self, analyzer):
         """Both primary and comparison data are presented."""
-        analyzer._client.chat.completions.create.return_value = _mock_llm(
+        analyzer._llm_client._client.chat.completions.create.return_value = mock_llm_response(
             """{"conclusion": "Electronics declined.",
                 "evidence_chain": [{"claim": "Electronics: 360 vs 530",
                                     "data": ["32% drop"], "source": "comparison",
@@ -135,18 +131,18 @@ class TestAnalyze:
 
     async def test_evaluates_prompt_includes_both_datasets(self, analyzer):
         """Prompt contains both primary and comparison data."""
-        analyzer._client.chat.completions.create.return_value = _mock_llm(
+        analyzer._llm_client._client.chat.completions.create.return_value = mock_llm_response(
             '{"conclusion": "Decline noted."}'
         )
         await analyzer.analyze("Why?", SAMPLE_PRIMARY, SAMPLE_COMPARISON)
-        call_args = analyzer._client.chat.completions.create.call_args
+        call_args = analyzer._llm_client._client.chat.completions.create.call_args
         messages = call_args[1]["messages"]
         user_msg = messages[1]["content"]
         assert "[主数据]" in user_msg
         assert "[对比数据]" in user_msg
 
     async def test_non_json_response_fallback(self, analyzer):
-        analyzer._client.chat.completions.create.return_value = _mock_llm(
+        analyzer._llm_client._client.chat.completions.create.return_value = mock_llm_response(
             "Plain text response"
         )
         report = await analyzer.analyze("Why?", SAMPLE_PRIMARY)
@@ -155,7 +151,7 @@ class TestAnalyze:
 
     async def test_empty_evidence_chain_valid(self, analyzer):
         """Evidence chain can be empty — still a valid report."""
-        analyzer._client.chat.completions.create.return_value = _mock_llm(
+        analyzer._llm_client._client.chat.completions.create.return_value = mock_llm_response(
             '{"conclusion": "No clear pattern.", "evidence_chain": []}'
         )
         report = await analyzer.analyze("Why?", SAMPLE_PRIMARY)

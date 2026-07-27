@@ -18,19 +18,15 @@ import {
   DeleteOutlined,
   CheckCircleOutlined,
 } from "@ant-design/icons";
+import {
+  testConnection,
+  saveConnection,
+  listConnections,
+  deleteConnection,
+  ConnectionInfo,
+} from "../services/api";
 
 const { Text, Title } = Typography;
-
-interface ConnectionInfo {
-  id: string;
-  display_name: string;
-  host: string;
-  port: number;
-  database: string;
-  status: string;
-  table_count: number;
-  created_at: string;
-}
 
 const ConnectDatabase: React.FC = () => {
   const [connections, setConnections] = useState<ConnectionInfo[]>([]);
@@ -42,16 +38,13 @@ const ConnectDatabase: React.FC = () => {
 
   const fetchConnections = async () => {
     try {
-      const token = localStorage.getItem("auth_token");
-      const res = await fetch("/api/connections", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setConnections(data.connections || []);
-      }
+      setLoading(true);
+      const data = await listConnections();
+      setConnections(data.connections || []);
     } catch {
       // ignore
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -63,16 +56,7 @@ const ConnectDatabase: React.FC = () => {
     try {
       const values = await form.validateFields();
       setTesting(true);
-      const token = localStorage.getItem("auth_token");
-      const res = await fetch("/api/connections/test", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(values),
-      });
-      const data = await res.json();
+      const data = await testConnection(values);
       if (data.success) {
         message.success(`连接成功，发现 ${data.count} 张表`);
       } else {
@@ -89,20 +73,7 @@ const ConnectDatabase: React.FC = () => {
     try {
       const values = await form.validateFields();
       setSaving(true);
-      const token = localStorage.getItem("auth_token");
-      const res = await fetch("/api/connections", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(values),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || "保存失败");
-      }
-      const data = await res.json();
+      const data = await saveConnection(values);
       message.success(`已连接 ${data.display_name}，注册 ${data.count} 张表`);
       setModalOpen(false);
       form.resetFields();
@@ -116,15 +87,9 @@ const ConnectDatabase: React.FC = () => {
 
   const handleDelete = async (id: string) => {
     try {
-      const token = localStorage.getItem("auth_token");
-      const res = await fetch(`/api/connections/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        message.success("连接已删除");
-        fetchConnections();
-      }
+      await deleteConnection(id);
+      message.success("连接已删除");
+      fetchConnections();
     } catch {
       message.error("删除失败");
     }
@@ -161,10 +126,7 @@ const ConnectDatabase: React.FC = () => {
         dataSource={connections}
         locale={{ emptyText: "暂无数据库连接" }}
         renderItem={(item) => (
-          <Card
-            style={{ marginBottom: 12 }}
-            size="small"
-          >
+          <Card style={{ marginBottom: 12 }} size="small">
             <div
               style={{
                 display: "flex",

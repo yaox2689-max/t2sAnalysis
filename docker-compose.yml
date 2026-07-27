@@ -3,6 +3,11 @@ services:
     image: mysql:8.0
     container_name: t2s-mysql
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?请在 .env 文件中设置 DB_PASSWORD}
       MYSQL_DATABASE: t2s_analysis
@@ -20,6 +25,11 @@ services:
     image: redis:7-alpine
     container_name: t2s-redis
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
     ports:
       - "6379:6379"
     healthcheck:
@@ -33,6 +43,11 @@ services:
       context: ./backend
     container_name: t2s-backend
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
     environment:
       APP_NAME: AI Data Analyst
       APP_VERSION: "0.1.0"
@@ -72,6 +87,11 @@ services:
       context: ./frontend
     container_name: t2s-frontend
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
     ports:
       - "80:80"
     depends_on:

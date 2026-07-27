@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
+import { useOutletContext } from "react-router-dom";
 import { Typography, Button, Empty, Spin, Modal, message } from "antd";
 import {
   MessageOutlined,
@@ -24,17 +25,14 @@ function toBeijingTime(ts: string): string {
   });
 }
 
-interface HistoryProps {
+interface OutletContext {
   onSelectSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
   refreshKey: number;
 }
 
-const History: React.FC<HistoryProps> = ({
-  onSelectSession,
-  onDeleteSession,
-  refreshKey,
-}) => {
+const History: React.FC = () => {
+  const { onSelectSession, onDeleteSession, refreshKey } = useOutletContext<OutletContext>();
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
 

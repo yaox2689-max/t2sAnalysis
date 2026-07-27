@@ -10,12 +10,17 @@ Usage:
     from app.tools.schema_profiler import SchemaProfiler
 
     profiler = SchemaProfiler(duckdb_engine)
-    profile = profiler.profile("orders")
+    profile = await profiler.profile("orders")
     # {"table": "orders", "row_count": 50, "columns": [...]}
 """
 
+import asyncio
 import logging
 import time
+
+from app.core.constants import NUMERIC_SQL_TYPES
+from app.core.protocols import DuckDBEngineProtocol
+from app.core.utils import truncate_error
 
 logger = logging.getLogger("t2s_analysis")
 
@@ -29,12 +34,6 @@ TIME = "time"
 IDENTIFIER = "identifier"
 TEXT = "text"
 
-# Numeric SQL types
-_NUMERIC_TYPES = {
-    "TINYINT", "SMALLINT", "INTEGER", "BIGINT", "HUGEINT",
-    "FLOAT", "DOUBLE", "REAL", "DECIMAL", "NUMERIC",
-}
-
 # Time SQL types
 _TIME_TYPES = {"DATE", "TIMESTAMP", "TIMESTAMP WITH TIME ZONE", "TIMESTAMPTZ", "TIME"}
 
@@ -45,35 +44,21 @@ _IDENTIFIER_PATTERNS = {"_id", "id_", "code", "no", "number", "key", "uuid", "gu
 class SchemaProfiler:
     """Generate data profiles for DuckDB tables."""
 
-    def __init__(self, duckdb_engine: object) -> None:
+    def __init__(self, duckdb_engine: DuckDBEngineProtocol) -> None:
         self._engine = duckdb_engine
         self._cache: dict[str, tuple[float, dict]] = {}
 
-    def profile(self, table_name: str) -> dict:
-        """Generate a full profile for a DuckDB table.
+    async def profile(self, table_name: str) -> dict:
+        """Generate a full profile for a DuckDB table (async, non-blocking).
 
         Results are cached for 10 minutes to avoid repeated expensive queries.
-
-        Returns:
-            {
-                "table": "orders",
-                "row_count": 50,
-                "column_count": 7,
-                "columns": [
-                    {
-                        "name": "customer_id",
-                        "type": "VARCHAR",
-                        "semantic_type": "identifier",
-                        "null_ratio": 0.0,
-                        "unique_count": 15,
-                        "min": None,
-                        "max": None,
-                        "top_values": ["C001", "C002", "C003"]
-                    },
-                    ...
-                ]
-            }
+        The synchronous DuckDB profiling logic runs in a thread via
+        ``asyncio.to_thread`` so the event loop is never blocked.
         """
+        return await asyncio.to_thread(self._profile_sync, table_name)
+
+    def _profile_sync(self, table_name: str) -> dict:
+        """Synchronous profiling logic — called via ``asyncio.to_thread``."""
         # Check cache
         now = time.monotonic()
         if table_name in self._cache:
@@ -156,7 +141,7 @@ class SchemaProfiler:
                     min_val = str(result[0]) if result[0] is not None else None
                     max_val = str(result[1]) if result[1] is not None else None
             except Exception as exc:
-                logger.debug({"event": "profile_min_max_failed", "table": table, "column": col_name, "error": str(exc)[:200]})
+                logger.debug({"event": "profile_min_max_failed", "table": table, "column": col_name, "error": truncate_error(exc)})
 
         # Top values (for low-cardinality columns)
         top_values = []
@@ -169,7 +154,7 @@ class SchemaProfiler:
                 ).fetchall()
                 top_values = [str(r[0]) for r in result]
             except Exception as exc:
-                logger.debug({"event": "profile_top_values_failed", "table": table, "column": col_name, "error": str(exc)[:200]})
+                logger.debug({"event": "profile_top_values_failed", "table": table, "column": col_name, "error": truncate_error(exc)})
 
         # Semantic type
         semantic_type = self._infer_semantic_type(
@@ -239,7 +224,7 @@ class SchemaProfiler:
         # Strip parameters: VARCHAR(255) → VARCHAR
         base = col_type.split("(")[0].strip()
 
-        if base in _NUMERIC_TYPES:
+        if base in NUMERIC_SQL_TYPES:
             return "numeric"
         if base in _TIME_TYPES:
             return "time"

@@ -1,13 +1,14 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-
-interface User {
-  id: string;
-  username: string;
-  display_name: string | null;
-}
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+} from "react";
+import { login as apiLogin, register as apiRegister, getMe, UserInfo } from "../services/api";
 
 interface AuthContextType {
-  user: User | null;
+  user: UserInfo | null;
   token: string | null;
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, password: string, displayName: string) => Promise<void>;
@@ -23,9 +24,13 @@ export const useAuth = (): AuthContextType => {
   return ctx;
 };
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem("auth_token"));
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
+  const [user, setUser] = useState<UserInfo | null>(null);
+  const [token, setToken] = useState<string | null>(() =>
+    localStorage.getItem("auth_token"),
+  );
   const [loading, setLoading] = useState(true);
 
   // Validate token on mount
@@ -34,13 +39,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
       return;
     }
-    fetch("/api/auth/me", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error("Invalid token");
-        return res.json();
-      })
+    getMe()
       .then((data) => setUser(data))
       .catch(() => {
         localStorage.removeItem("auth_token");
@@ -50,36 +49,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [token]);
 
   const login = useCallback(async (username: string, password: string) => {
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || "登录失败");
-    }
-    const data = await res.json();
+    const data = await apiLogin(username, password);
     localStorage.setItem("auth_token", data.access_token);
     setToken(data.access_token);
     setUser(data.user);
   }, []);
 
-  const register = useCallback(async (username: string, password: string, displayName: string) => {
-    const res = await fetch("/api/auth/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password, display_name: displayName }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || "注册失败");
-    }
-    const data = await res.json();
-    localStorage.setItem("auth_token", data.access_token);
-    setToken(data.access_token);
-    setUser(data.user);
-  }, []);
+  const register = useCallback(
+    async (username: string, password: string, displayName: string) => {
+      const data = await apiRegister(username, password, displayName);
+      localStorage.setItem("auth_token", data.access_token);
+      setToken(data.access_token);
+      setUser(data.user);
+    },
+    [],
+  );
 
   const logout = useCallback(() => {
     localStorage.removeItem("auth_token");
@@ -91,7 +75,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   if (loading) return null;
 
   return (
-    <AuthContext.Provider value={{ user, token, login, register, logout, isAuthenticated: !!user }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        token,
+        login,
+        register,
+        logout,
+        isAuthenticated: !!user,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

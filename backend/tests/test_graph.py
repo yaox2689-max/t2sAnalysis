@@ -61,7 +61,7 @@ class FakeRetriever:
 
 class FakeRegistry:
     """Mimics DatasetRegistry.get_catalog() returning a Catalog."""
-    def get_catalog(self, session_id=None, user_id=None, top_k=10, question=None):
+    async def get_catalog(self, session_id=None, user_id=None, top_k=10, question=None):
         from app.services.dataset_registry import Catalog, ColumnSchema, TableSchema
         return Catalog(tables=[
             TableSchema(
@@ -74,7 +74,7 @@ class FakeRegistry:
 
 
 class FakePromptBuilder:
-    def build_prompt(self, catalog):
+    async def build_prompt(self, catalog):
         return "SELECT * FROM orders"
 
 

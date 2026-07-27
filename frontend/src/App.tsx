@@ -1,4 +1,13 @@
-import React, { useState, useCallback } from "react";
+import React, { useCallback, useState } from "react";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  Outlet,
+  useNavigate,
+  useLocation,
+} from "react-router-dom";
 import { Layout, Menu, Button } from "antd";
 import {
   MessageOutlined,
@@ -18,60 +27,34 @@ const { Sider, Content } = Layout;
 
 const AppLayout: React.FC = () => {
   const { user, logout } = useAuth();
-  const [currentPage, setCurrentPage] = useState("chat");
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(
-    () => localStorage.getItem("session_id")
-  );
+  const navigate = useNavigate();
+  const location = useLocation();
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const handleSessionChange = useCallback((id: string) => {
-    setCurrentSessionId(id);
-    localStorage.setItem("session_id", id);
-    setCurrentPage("chat");
-    setRefreshKey((k) => k + 1);
-  }, []);
-
-  const handleNewSession = useCallback(() => {
-    localStorage.removeItem("session_id");
-    setCurrentSessionId(null);
-    setRefreshKey((k) => k + 1);
-  }, []);
-
-  const handleDeleteSession = useCallback(
-    (deletedId: string) => {
-      if (deletedId === currentSessionId) {
-        localStorage.removeItem("session_id");
-        setCurrentSessionId(null);
-      }
+  const handleSessionChange = useCallback(
+    (id: string) => {
+      navigate(`/chat/${id}`);
       setRefreshKey((k) => k + 1);
     },
-    [currentSessionId]
+    [navigate]
   );
 
-  const renderPage = () => {
-    switch (currentPage) {
-      case "history":
-        return (
-          <History
-            onSelectSession={handleSessionChange}
-            onDeleteSession={handleDeleteSession}
-            refreshKey={refreshKey}
-          />
-        );
-      case "connections":
-        return <ConnectDatabase />;
-      case "settings":
-        return <SettingsPage />;
-      default:
-        return (
-          <Chat
-            sessionId={currentSessionId}
-            onNewSession={handleNewSession}
-            onSessionChange={handleSessionChange}
-          />
-        );
-    }
-  };
+  const handleNewSession = useCallback(() => {
+    navigate("/chat");
+    setRefreshKey((k) => k + 1);
+  }, [navigate]);
+
+  const handleDeleteSession = useCallback((_deletedId: string) => {
+    setRefreshKey((k) => k + 1);
+  }, []);
+
+  const selectedKey = location.pathname.startsWith("/history")
+    ? "history"
+    : location.pathname.startsWith("/connections")
+    ? "connections"
+    : location.pathname.startsWith("/settings")
+    ? "settings"
+    : "chat";
 
   return (
     <Layout style={{ minHeight: "100vh", background: "#f8f9fc" }}>
@@ -151,8 +134,8 @@ const AppLayout: React.FC = () => {
         <Menu
           className="sidebar-menu"
           mode="inline"
-          selectedKeys={[currentPage]}
-          onClick={({ key }) => setCurrentPage(key)}
+          selectedKeys={[selectedKey]}
+          onClick={({ key }) => navigate(`/${key}`)}
           style={{
             background: "transparent",
             borderRight: "none",
@@ -215,7 +198,9 @@ const AppLayout: React.FC = () => {
             overflow: "hidden",
           }}
         >
-          {renderPage()}
+          <Outlet
+            context={{ refreshKey, onSelectSession: handleSessionChange, onDeleteSession: handleDeleteSession, handleSessionChange, handleNewSession }}
+          />
         </Content>
       </Layout>
     </Layout>
@@ -233,7 +218,21 @@ const App: React.FC = () => {
 const AppContent: React.FC = () => {
   const { isAuthenticated } = useAuth();
   if (!isAuthenticated) return <Login />;
-  return <AppLayout />;
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/" element={<AppLayout />}>
+          <Route index element={<Navigate to="/chat" replace />} />
+          <Route path="chat" element={<Chat />} />
+          <Route path="chat/:sessionId" element={<Chat />} />
+          <Route path="history" element={<History />} />
+          <Route path="connections" element={<ConnectDatabase />} />
+          <Route path="settings" element={<SettingsPage />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  );
 };
 
 export default App;

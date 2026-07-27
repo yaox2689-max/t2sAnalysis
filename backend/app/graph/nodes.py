@@ -12,6 +12,7 @@ a dedicated Repository, Service, Tool, or Agent module.
 import logging
 
 from app.agents.state import AgentState
+from app.core.utils import truncate_error
 from app.models.query import QueryResult
 from app.models.task import GeneratedSQL, SchemaContext, TaskPlan
 from app.tools.sql_validator import ValidationResult
@@ -64,8 +65,8 @@ async def retrieve_schema_node(
         registry: DatasetRegistry
         prompt_builder: PromptBuilder
 
-        catalog = registry.get_catalog(session_id=session_id, user_id=user_id, question=question, top_k=10)
-        prompt_text = prompt_builder.build_prompt(catalog)
+        catalog = await registry.get_catalog(session_id=session_id, user_id=user_id, question=question, top_k=10)
+        prompt_text = await prompt_builder.build_prompt(catalog)
         available_tables = [t.table_name for t in catalog.tables]
 
         # Build a minimal SchemaContext for backward compatibility (validation)
@@ -140,10 +141,10 @@ async def execute_sql_node(
         }))
         return {"query_result": result}
     except Exception as exc:
-        logger.error(_log(state, {"event": "execute_sql_error", "sql": sql[:200], "error": str(exc)}))
+        logger.error(_log(state, {"event": "execute_sql_error", "sql": sql[:200], "error": truncate_error(exc)}))
         return {
             "query_result": None,
-            "errors": (state.get("errors") or []) + [str(exc)],
+            "errors": (state.get("errors") or []) + [truncate_error(exc)],
         }
 
 

@@ -17,6 +17,7 @@ Usage:
 
 from typing import Optional
 
+from app.core.constants import NUMERIC_SQL_TYPES
 from app.models.query import QueryResult
 from app.models.task import TaskPlan
 
@@ -62,11 +63,6 @@ _CATEGORY_KEYWORDS = frozenset({
     "省份", "国家", "年份", "月份", "季度",
 })
 
-_NUMERIC_TYPES = frozenset({
-    "int", "integer", "bigint", "smallint", "tinyint",
-    "decimal", "numeric", "float", "double", "real",
-})
-
 _NUMERIC_KEYWORDS = frozenset({
     "price", "amount", "total", "sales", "revenue", "income",
     "count", "quantity", "sum", "avg", "average", "rate",
@@ -86,7 +82,7 @@ def _column_type(col: dict) -> str:
 def _is_numeric(col: dict) -> bool:
     name = (col.get("column_name") or col.get("name") or "").lower()
     t = _column_type(col)
-    if t in _NUMERIC_TYPES or any(kw in t for kw in ("int", "dec", "num", "float", "double")):
+    if t in NUMERIC_SQL_TYPES or any(kw in t for kw in ("int", "dec", "num", "float", "double")):
         return True
     return any(kw in name for kw in _NUMERIC_KEYWORDS)
 

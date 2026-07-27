@@ -1,11 +1,13 @@
 """Tests for SQLGenerator — parsing, schema validation, mock LLM."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.agents.sql_generator import SQLGenerator
 from app.models.task import SchemaContext, TaskPlan
+
+from .conftest import mock_llm_response
 
 SAMPLE_SCHEMA = SchemaContext(
     tables=["orders", "customers"],
@@ -26,17 +28,17 @@ SAMPLE_SCHEMA = SchemaContext(
 
 @pytest.fixture
 def gen():
-    return SQLGenerator(api_key="test", model="test-model", base_url="http://fake")
+    from unittest.mock import MagicMock
+
+    from app.core.llm_client import LLMClient
+    mock_client = MagicMock()
+    llm = LLMClient(client=mock_client, model="test-model")
+    return SQLGenerator(llm_client=llm)
 
 
 def _mock_response(content: str):
-    msg = MagicMock()
-    msg.content = content
-    choice = MagicMock()
-    choice.message = msg
-    resp = MagicMock()
-    resp.choices = [choice]
-    return resp
+    """Build a mock OpenAI response object."""
+    return mock_llm_response(content)
 
 
 # ── _parse tests ───────────────────────────────────────
@@ -97,7 +99,7 @@ async def test_generate_calls_llm_and_validates(gen):
         '"valid": true}'
     )
 
-    with patch.object(gen.client.chat.completions, "create", new=AsyncMock(return_value=fake_resp)):
+    with patch.object(gen._llm_client._client.chat.completions, "create", new=AsyncMock(return_value=fake_resp)):
         result = await gen.generate(task_plan, SAMPLE_SCHEMA)
 
     assert result.valid is True
@@ -109,7 +111,7 @@ async def test_generate_llm_returns_invalid_json(gen):
     task_plan = TaskPlan(task_type="simple_query", metrics=["total"])
 
     with patch.object(
-        gen.client.chat.completions,
+        gen._llm_client._client.chat.completions,
         "create",
         new=AsyncMock(return_value=_mock_response("not json")),
     ):
@@ -129,7 +131,7 @@ async def test_generate_llm_invents_table(gen):
     )
 
     with patch.object(
-        gen.client.chat.completions,
+        gen._llm_client._client.chat.completions,
         "create",
         new=AsyncMock(return_value=fake_resp),
     ):

@@ -91,7 +91,7 @@ def score_result_consistency(
     if not columns:
         return 0.0
 
-    expected_tables = expected.get("expected_tables", [])
+    expected.get("expected_tables", [])
     expected_metrics = expected.get("expected_metrics", [])
 
     # Score column presence: do our result columns look related to what was asked?

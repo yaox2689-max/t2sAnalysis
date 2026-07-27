@@ -12,7 +12,9 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
+from app.bootstrap import bootstrap, ensure_bootstrap
 from app.core.auth import get_current_user
+from app.core.utils import truncate_error
 from app.services.auth_service import UserOut
 
 logger = logging.getLogger("t2s_analysis")
@@ -24,14 +26,6 @@ _UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..
 
 # Allowed extensions
 _ALLOWED_EXTENSIONS = {".xlsx", ".xls", ".csv"}
-
-
-async def _ensure_bootstrap():
-    """Ensure bootstrap is initialized and return it."""
-    from app.bootstrap import bootstrap
-    if not bootstrap._initialized:
-        await bootstrap.run()
-    return bootstrap
 
 
 def _ensure_upload_dir():
@@ -48,7 +42,7 @@ async def upload_dataset(
 
     Returns dataset metadata including preview data.
     """
-    bootstrap = await _ensure_bootstrap()
+    await ensure_bootstrap()
 
     # Verify session belongs to user
     from app.core.database import db as _db
@@ -122,7 +116,7 @@ async def upload_dataset(
                     "profile": ds.profile_meta,
                 })
             except Exception as exc:
-                logger.warning({"event": "preview_build_failed", "table": ds.table_name, "error": str(exc)[:200]})
+                logger.warning({"event": "preview_build_failed", "table": ds.table_name, "error": truncate_error(exc)})
                 previews.append({
                     "dataset_id": ds.id,
                     "table_name": ds.table_name,
@@ -138,15 +132,15 @@ async def upload_dataset(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Import failed: {str(exc)[:200]}")
+        raise HTTPException(status_code=500, detail=f"Import failed: {truncate_error(exc)}")
 
 
 @router.get("")
 async def list_datasets(session_id: str, user: UserOut = Depends(get_current_user)):
     """List all datasets for a session (owned by current user)."""
-    bootstrap = await _ensure_bootstrap()
+    await ensure_bootstrap()
 
-    catalog = bootstrap.registry.get_catalog(session_id=session_id, user_id=user.id, top_k=100)
+    catalog = await bootstrap.registry.get_catalog(session_id=session_id, user_id=user.id, top_k=100)
     datasets = []
     for table in catalog.tables:
         datasets.append({
@@ -167,7 +161,7 @@ async def list_datasets(session_id: str, user: UserOut = Depends(get_current_use
 @router.delete("/{table_name}")
 async def delete_dataset(table_name: str, user: UserOut = Depends(get_current_user)):
     """Delete a dataset (owned by current user)."""
-    bootstrap = await _ensure_bootstrap()
+    await ensure_bootstrap()
 
     # Check if table exists and belongs to user
     meta = bootstrap.registry._index.get(table_name)

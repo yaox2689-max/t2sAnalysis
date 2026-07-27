@@ -8,8 +8,13 @@ Usage:
     val = await redis_client.get("key")
 """
 
+from __future__ import annotations
+
 import logging
 from typing import Optional
+
+from app.core.config import settings
+from app.core.utils import truncate_error
 
 logger = logging.getLogger("t2s_analysis")
 
@@ -34,11 +39,11 @@ class RedisClient:
                 host=host, port=port, db=db,
                 max_connections=max_connections,
                 decode_responses=True,
-                socket_connect_timeout=3,
+                socket_connect_timeout=settings.REDIS_CONNECT_TIMEOUT,
             )
             logger.info({"event": "redis_init", "host": host, "port": port})
         except Exception as exc:
-            logger.warning({"event": "redis_init_failed", "error": str(exc)[:100]})
+            logger.warning({"event": "redis_init_failed", "error": truncate_error(exc, 100)})
             self._client = None
 
     @property

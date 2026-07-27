@@ -8,8 +8,10 @@ Usage:
     result = await router.execute(sql, session_id="ses_abc", user_id="usr_123")
 """
 
+from __future__ import annotations
+
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 import sqlglot
 import sqlglot.expressions as exp
@@ -40,11 +42,11 @@ class ExecutorRouter:
 
     def __init__(
         self,
-        duckdb_executor: object,
-        registry: object,
-        external_executor: object,
-        connection_store: object = None,
-        cache: object = None,
+        duckdb_executor: Any,
+        registry: Any,
+        external_executor: Any,
+        connection_store: Any = None,
+        cache: Any = None,
     ) -> None:
         self._duckdb = duckdb_executor
         self._external = external_executor
@@ -62,7 +64,6 @@ class ExecutorRouter:
 
         Checks cache first; on miss, executes and caches the result.
         """
-        # Check cache
         if self._cache:
             cached = await self._cache.get(sql, user_id=user_id)
             if cached is not None:
@@ -70,9 +71,8 @@ class ExecutorRouter:
 
         tables_in_query = _extract_table_names(sql)
 
-        # Check if any table is a MySQL direct-connection table
         for table_name in tables_in_query:
-            meta = self._registry._index.get(table_name)
+            meta = self._registry.get_meta(table_name)
             if meta and meta.get("source_type") == "mysql":
                 connection_id = meta.get("connection_id")
                 if connection_id and self._connections:
@@ -83,10 +83,8 @@ class ExecutorRouter:
                             await self._cache.set(sql, result, user_id=user_id)
                         return result
 
-        # Default: use DuckDB
         result = await self._duckdb.execute(sql)
 
-        # Cache result
         if self._cache:
             await self._cache.set(sql, result, user_id=user_id)
 

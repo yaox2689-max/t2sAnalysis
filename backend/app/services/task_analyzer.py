@@ -7,26 +7,17 @@ It does NOT involve Database, Agent, or multi-step reasoning.
 import json
 from typing import Optional
 
-import httpx
-
+from app.core.llm_client import LLMClient
 from app.core.prompt_loader import prompt_loader
-from app.core.utils import create_llm_client
 from app.models.task import TaskPlan
 
 
 class TaskAnalyzer:
     """Analyses a user question and produces a structured TaskPlan."""
 
-    def __init__(
-        self,
-        api_key: str,
-        model: str,
-        base_url: Optional[str] = None,
-        http_client: Optional[httpx.AsyncClient] = None,
-    ) -> None:
-        self.client = create_llm_client(api_key, base_url, http_client=http_client)
-        self.model = model
-        self._system_prompt = prompt_loader.load("sql_agent/task_analyzer")
+    def __init__(self, llm_client: LLMClient) -> None:
+        self._llm_client = llm_client
+        self._prompt = prompt_loader.load("sql_agent/task_analyzer")
 
     async def analyze(
         self,
@@ -34,8 +25,8 @@ class TaskAnalyzer:
         history: Optional[list[dict]] = None,
     ) -> TaskPlan:
         """Parse a user question into a TaskPlan using LLM."""
-        messages = [
-            {"role": "system", "content": self._system_prompt},
+        messages: list[dict] = [
+            {"role": "system", "content": self._prompt},
         ]
 
         if history:
@@ -43,13 +34,12 @@ class TaskAnalyzer:
 
         messages.append({"role": "user", "content": question})
 
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
+        raw = await self._llm_client.call(
+            system_prompt=self._prompt,
+            user_msg=question,
             temperature=0.1,
+            messages=messages,
         )
-
-        raw = response.choices[0].message.content or ""
 
         return self._parse(raw)
 

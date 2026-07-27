@@ -11,9 +11,14 @@ Usage:
     schema = registry.get_table_schema("orders")
 """
 
+from __future__ import annotations
+
+import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Iterator, Optional
+
+from app.core.utils import truncate_error
 
 logger = logging.getLogger("t2s_analysis")
 
@@ -53,7 +58,7 @@ class Catalog:
 class DatasetRegistry:
     """Manage the catalog of all datasets visible to the AI."""
 
-    def __init__(self, duckdb_engine: object, profiler: object = None) -> None:
+    def __init__(self, duckdb_engine: Any, profiler: Any = None) -> None:
         self._engine = duckdb_engine
         self._profiler = profiler
         # In-memory index: table_name → metadata
@@ -83,7 +88,34 @@ class DatasetRegistry:
         self._index.pop(table_name, None)
         logger.info({"event": "dataset_unregistered", "table": table_name})
 
-    def get_catalog(
+    # ── Public metadata access (replaces external _index access) ──
+
+    def get_meta(self, table_name: str) -> Optional[dict]:
+        """Get raw metadata dict for a table."""
+        return self._index.get(table_name)
+
+    def set_meta(self, table_name: str, key: str, value: Any) -> None:
+        """Set a metadata field on a registered table."""
+        if table_name in self._index:
+            self._index[table_name][key] = value
+
+    def count_external_tables(self, connection_id: str) -> int:
+        """Count tables associated with a MySQL connection."""
+        return sum(
+            1 for m in self._index.values()
+            if m.get("connection_id") == connection_id
+        )
+
+    def iter_by_connection(self, connection_id: str) -> Iterator[str]:
+        """Iterate table names for a given connection."""
+        return (
+            name for name, meta in self._index.items()
+            if meta.get("connection_id") == connection_id
+        )
+
+    # ── Catalog queries ──
+
+    async def get_catalog(
         self,
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
@@ -106,10 +138,11 @@ class DatasetRegistry:
             # Filter by user_id if specified
             if user_id and meta.get("user_id") and meta["user_id"] != user_id:
                 continue
-            # Filter by session_id if specified
-            if session_id and meta.get("session_id") != session_id:
+            # Filter by session_id — global tables (session_id=None) are always visible
+            table_session = meta.get("session_id")
+            if session_id and table_session is not None and table_session != session_id:
                 continue
-            schema = self._build_table_schema(table_name, meta)
+            schema = await self._build_table_schema(table_name, meta)
             if schema:
                 tables.append(schema)
 
@@ -119,12 +152,12 @@ class DatasetRegistry:
 
         return Catalog(tables=tables)
 
-    def get_table_schema(self, table_name: str) -> Optional[TableSchema]:
+    async def get_table_schema(self, table_name: str) -> Optional[TableSchema]:
         """Get the full schema for a single table."""
         meta = self._index.get(table_name)
         if not meta:
             return None
-        return self._build_table_schema(table_name, meta)
+        return await self._build_table_schema(table_name, meta)
 
     def list_tables(self, source_type: Optional[str] = None) -> list[str]:
         """List all registered table names, optionally filtered by source."""
@@ -132,9 +165,9 @@ class DatasetRegistry:
             return [t for t, m in self._index.items() if m["source_type"] == source_type]
         return list(self._index.keys())
 
-    def load_from_duckdb(self) -> None:
-        """Load all existing DuckDB tables into the registry."""
-        tables = self._engine.tables()
+    async def load_from_duckdb(self) -> None:
+        """Load all existing DuckDB tables into the registry (non-blocking)."""
+        tables = await asyncio.to_thread(self._engine.tables)
         for table_name in tables:
             if table_name not in self._index:
                 self._index[table_name] = {
@@ -145,8 +178,8 @@ class DatasetRegistry:
                 }
         logger.info({"event": "registry_loaded", "count": len(self._index)})
 
-    def _build_table_schema(self, table_name: str, meta: dict) -> Optional[TableSchema]:
-        """Build a TableSchema by profiling the DuckDB table."""
+    async def _build_table_schema(self, table_name: str, meta: dict) -> Optional[TableSchema]:
+        """Build a TableSchema by profiling the DuckDB table (async)."""
         try:
             # Build original_name lookup from columns_meta
             columns_meta = meta.get("columns_meta") or []
@@ -158,7 +191,7 @@ class DatasetRegistry:
 
             # Use profiler if available
             if self._profiler:
-                profile = self._profiler.profile(table_name)
+                profile = await self._profiler.profile(table_name)
                 columns = []
                 for col in profile["columns"]:
                     columns.append(ColumnSchema(
@@ -182,8 +215,11 @@ class DatasetRegistry:
                     columns=columns,
                 )
             else:
-                # Fallback: basic schema without profiling
-                desc = self._engine.execute(f'DESCRIBE "{table_name}"').fetchall()
+                # Fallback: basic schema without profiling (run sync DuckDB in thread)
+                def _fetch_desc() -> list:
+                    return self._engine.execute(f'DESCRIBE "{table_name}"').fetchall()
+
+                desc = await asyncio.to_thread(_fetch_desc)
                 columns = [
                     ColumnSchema(name=col[0], data_type=col[1], semantic_type="text")
                     for col in desc
@@ -197,5 +233,5 @@ class DatasetRegistry:
                     columns=columns,
                 )
         except Exception as exc:
-            logger.error({"event": "schema_build_failed", "table": table_name, "error": str(exc)})
+            logger.error({"event": "schema_build_failed", "table": table_name, "error": truncate_error(exc)})
             return None

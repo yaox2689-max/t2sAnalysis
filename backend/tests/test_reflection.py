@@ -10,7 +10,16 @@ from app.agents.reflection import (
     GeneratedSQL,
     ReflectionLoop,
 )
+from app.core.llm_client import LLMClient
 from app.models.task import SchemaContext, TaskPlan
+
+from .conftest import mock_llm_response
+
+
+def _make_llm():
+    """Create a mock LLMClient for tests."""
+    mock_client = MagicMock()
+    return LLMClient(client=mock_client, model="test")
 
 SAMPLE_TASK_PLAN = TaskPlan(
     task_type="aggregation",
@@ -32,23 +41,11 @@ SAMPLE_SCHEMA = SchemaContext(
 # ── ErrorClassifier tests ───────────────────────────────
 
 
-def _mock_llm(content: str):
-    msg = MagicMock()
-    msg.content = content
-    choice = MagicMock()
-    choice.message = msg
-    resp = MagicMock()
-    resp.choices = [choice]
-    return resp
-
-
 @pytest.fixture
 def classifier():
-    client = MagicMock()
-    client.chat = MagicMock()
-    client.chat.completions = MagicMock()
-    client.chat.completions.create = AsyncMock()
-    return ErrorClassifier(llm_client=client, model="test-model")
+    llm = _make_llm()
+    llm._client.chat.completions.create = AsyncMock()
+    return ErrorClassifier(llm_client=llm)
 
 
 class TestClassifier:
@@ -85,7 +82,7 @@ class TestClassifier:
 
     async def test_classify_calls_llm(self, classifier):
         """classify() sends error to LLM and returns parsed result."""
-        classifier._client.chat.completions.create.return_value = _mock_llm(
+        classifier._llm_client._client.chat.completions.create.return_value = mock_llm_response(
             '{"error_type": "syntax_error", "confidence": 0.9, "detail": "SQL syntax error"}'
         )
         result = await classifier.classify("You have an error in your SQL syntax")
@@ -94,7 +91,7 @@ class TestClassifier:
 
     async def test_classify_fallback_on_bad_response(self, classifier):
         """Non-JSON LLM response falls back to 'other'."""
-        classifier._client.chat.completions.create.return_value = _mock_llm(
+        classifier._llm_client._client.chat.completions.create.return_value = mock_llm_response(
             "bad response"
         )
         result = await classifier.classify("some error")
@@ -131,9 +128,7 @@ def _make_loop(
 ) -> ReflectionLoop:
     """Build a ReflectionLoop with a stubbed classifier."""
     loop = ReflectionLoop(
-        api_key="test",
-        model="test-model",
-        base_url="http://fake",
+        llm_client=_make_llm(),
         sql_generator=FakeGenerator(GeneratedSQL(sql="SELECT 1", valid=True)),
         schema_retriever=FakeRetriever(SAMPLE_SCHEMA),
     )
@@ -248,7 +243,7 @@ async def test_schema_error_handler_calls_retriever():
     retriever = FakeRetriever(SAMPLE_SCHEMA)
     gen = FakeGenerator(GeneratedSQL(sql="SELECT 1", valid=True))
     loop = ReflectionLoop(
-        api_key="test", model="test", base_url="http://fake",
+        llm_client=_make_llm(),
         sql_generator=gen, schema_retriever=retriever,
     )
 
@@ -262,15 +257,16 @@ async def test_schema_error_handler_calls_retriever():
 @pytest.mark.asyncio
 async def test_syntax_error_handler_uses_llm():
     """Syntax error handler calls LLM to fix SQL."""
-    loop = ReflectionLoop(
-        api_key="test", model="test", base_url="http://fake",
-        sql_generator=FakeGenerator(GeneratedSQL(sql="SELECT 1", valid=True)),
-        schema_retriever=FakeRetriever(SAMPLE_SCHEMA),
-    )
-    loop._client.chat.completions.create = AsyncMock(
-        return_value=_mock_llm(
+    llm = _make_llm()
+    llm._client.chat.completions.create = AsyncMock(
+        return_value=mock_llm_response(
             '{"sql": "SELECT id FROM orders", "explanation": "lowercase id", "valid": true}'
         )
+    )
+    loop = ReflectionLoop(
+        llm_client=llm,
+        sql_generator=FakeGenerator(GeneratedSQL(sql="SELECT 1", valid=True)),
+        schema_retriever=FakeRetriever(SAMPLE_SCHEMA),
     )
 
     result = await loop._handle_syntax_error(
@@ -286,7 +282,7 @@ async def test_ambiguous_handler_reuses_generator():
     """Ambiguous handler re-generates with same generator."""
     gen = FakeGenerator(GeneratedSQL(sql="SELECT * FROM orders", valid=True))
     loop = ReflectionLoop(
-        api_key="test", model="test", base_url="http://fake",
+        llm_client=_make_llm(),
         sql_generator=gen, schema_retriever=FakeRetriever(SAMPLE_SCHEMA),
     )
 

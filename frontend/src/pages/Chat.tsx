@@ -1,599 +1,68 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Input, Button, Spin, Collapse, Table, Typography, message } from "antd";
+import React, { useState, useRef, useCallback } from "react";
+import { useParams, useOutletContext } from "react-router-dom";
+import { Input, Button, Spin, Typography } from "antd";
 import {
   SendOutlined,
   LoadingOutlined,
-  DatabaseOutlined,
-  BarChartOutlined,
-  BulbOutlined,
   RocketOutlined,
-  SearchOutlined,
-  LineChartOutlined,
   PaperClipOutlined,
+  DatabaseOutlined,
   CloseCircleOutlined,
-  AuditOutlined,
 } from "@ant-design/icons";
-import * as echarts from "echarts/core";
-import { BarChart, LineChart, PieChart, ScatterChart } from "echarts/charts";
-import {
-  GridComponent,
-  TooltipComponent,
-  LegendComponent,
-  DataZoomComponent,
-  TitleComponent,
-} from "echarts/components";
-import { CanvasRenderer } from "echarts/renderers";
-
-echarts.use([
-  BarChart,
-  LineChart,
-  PieChart,
-  ScatterChart,
-  GridComponent,
-  TooltipComponent,
-  LegendComponent,
-  DataZoomComponent,
-  TitleComponent,
-  CanvasRenderer,
-]);
-import {
-  sendChatStream,
-  createSession,
-  getSessionMessages,
-  uploadDataset,
-  deleteDataset,
-  MessageInfo,
-  DatasetPreview,
-} from "../services/api";
+import AssistantMessage from "../components/AssistantMessage";
+import TypingIndicator from "../components/TypingIndicator";
+import WelcomeScreen from "../components/WelcomeScreen";
+import { useChat } from "../hooks/useChat";
+import { useFileUpload } from "../hooks/useFileUpload";
 
 const { TextArea } = Input;
-const { Text, Paragraph } = Typography;
-
-const SUGGESTIONS = [
-  { icon: <PaperClipOutlined />, desc: "上传数据", text: "Excel / CSV 文件" },
-  { icon: <SearchOutlined />, desc: "提出问题", text: "用自然语言描述分析需求" },
-  { icon: <BarChartOutlined />, desc: "获取洞察", text: "自动生成图表和分析结论" },
-];
-
-// ── ECharts component ──────────────────────────────────
-
-const EChart: React.FC<{ option: Record<string, unknown> }> = ({ option }) => {
-  const chartRef = useRef<HTMLDivElement>(null);
-  const instanceRef = useRef<echarts.ECharts | null>(null);
-
-  useEffect(() => {
-    if (!chartRef.current) return;
-    const instance = echarts.init(chartRef.current);
-    instanceRef.current = instance;
-
-    const ro = new ResizeObserver(() => instance.resize());
-    ro.observe(chartRef.current);
-
-    return () => {
-      ro.disconnect();
-      instance.dispose();
-      instanceRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    instanceRef.current?.setOption(option, true);
-  }, [option]);
-
-  return (
-    <div
-      ref={chartRef}
-      style={{
-        width: "100%",
-        height: 380,
-        borderRadius: 10,
-        overflow: "hidden",
-      }}
-    />
-  );
-};
-
-// ── Typing Indicator ───────────────────────────────────
-
-const TypingIndicator: React.FC<{ progressLabel?: string }> = ({ progressLabel }) => (
-  <div
-    style={{
-      display: "flex",
-      alignItems: "center",
-      gap: 10,
-      padding: "20px 24px",
-      background: "#ffffff",
-      border: "1px solid #e5e8ef",
-      borderLeft: "3px solid #0d9488",
-      borderRadius: "2px 14px 14px 2px",
-      boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
-    }}
-  >
-    <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-      <span className="typing-dot" />
-      <span className="typing-dot" />
-      <span className="typing-dot" />
-    </div>
-    <Text style={{ color: "#64748b", fontSize: 13.5 }}>
-      {progressLabel || "AI 正在分析您的问题"}
-    </Text>
-  </div>
-);
-
-// ── Message display ────────────────────────────────────
-
-const AssistantMessage: React.FC<{ msg: MessageInfo }> = ({ msg }) => {
-  return (
-    <div className="assistant-card animate-fade-up">
-      {msg.sql_text && (
-        <Collapse
-          ghost
-          size="small"
-          items={[
-            {
-              key: "sql",
-              label: (
-                <span
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    color: "#0d9488",
-                    fontSize: 13,
-                    fontWeight: 600,
-                    letterSpacing: 0.3,
-                  }}
-                >
-                  <DatabaseOutlined />
-                  SQL 查询
-                </span>
-              ),
-              children: <pre className="sql-block">{msg.sql_text}</pre>,
-            },
-          ]}
-          style={{ marginBottom: 16 }}
-        />
-      )}
-
-      {msg.columns &&
-        msg.columns.length > 0 &&
-        msg.rows_data &&
-        msg.rows_data.length > 0 && (
-          <div style={{ marginBottom: 16 }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                marginBottom: 10,
-              }}
-            >
-              <BarChartOutlined style={{ color: "#f59e0b" }} />
-              <Text
-                strong
-                style={{
-                  fontSize: 13,
-                  color: "#64748b",
-                  letterSpacing: 0.3,
-                }}
-              >
-                查询结果
-              </Text>
-              <span
-                style={{
-                  background: "rgba(245, 158, 11, 0.1)",
-                  color: "#d97706",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  padding: "2px 8px",
-                  borderRadius: 10,
-                }}
-              >
-                {msg.rows_data.length} 行
-              </span>
-            </div>
-            <Table
-              dataSource={msg.rows_data.map((r, i) => ({ ...r, _key: i }))}
-              columns={msg.columns.map((col) => ({
-                title: col,
-                dataIndex: col,
-                key: col,
-                ellipsis: true,
-              }))}
-              rowKey="_key"
-              size="small"
-              pagination={
-                msg.rows_data.length > 20
-                  ? { pageSize: 20, size: "small" }
-                  : false
-              }
-              scroll={{ x: "max-content" }}
-              style={{ borderRadius: 10, overflow: "hidden" }}
-            />
-          </div>
-        )}
-
-      {msg.chart_type &&
-        msg.echarts_option &&
-        Object.keys(msg.echarts_option).length > 0 && (
-          <div style={{ marginBottom: 16 }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                marginBottom: 10,
-              }}
-            >
-              <LineChartOutlined style={{ color: "#0d9488" }} />
-              <Text
-                strong
-                style={{
-                  fontSize: 13,
-                  color: "#64748b",
-                  letterSpacing: 0.3,
-                }}
-              >
-                数据可视化
-              </Text>
-              <span
-                style={{
-                  background: "rgba(13, 148, 136, 0.1)",
-                  color: "#0d9488",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  padding: "2px 8px",
-                  borderRadius: 10,
-                }}
-              >
-                {msg.chart_type}
-              </span>
-            </div>
-            <EChart option={msg.echarts_option} />
-          </div>
-        )}
-
-      {msg.insight && (
-        <div
-          style={{
-            background: "linear-gradient(135deg, rgba(13,148,136,0.05), rgba(2,132,199,0.03))",
-            borderLeft: "3px solid #0d9488",
-            borderRadius: "2px 10px 10px 2px",
-            padding: "14px 20px",
-            marginBottom: 12,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              marginBottom: 8,
-            }}
-          >
-            <BulbOutlined style={{ color: "#0d9488", fontSize: 14 }} />
-            <Text
-              strong
-              style={{
-                fontSize: 13,
-                color: "#0d9488",
-                letterSpacing: 0.3,
-              }}
-            >
-              业务洞察
-            </Text>
-          </div>
-          <Paragraph
-            style={{
-              margin: 0,
-              fontSize: 14,
-              lineHeight: 1.7,
-              color: "#1a1a2e",
-            }}
-          >
-            {msg.insight}
-          </Paragraph>
-        </div>
-      )}
-
-      {msg.evidence && msg.evidence.conclusion && (
-        <div
-          style={{
-            background: "linear-gradient(135deg, rgba(245,158,11,0.05), rgba(217,119,6,0.03))",
-            borderLeft: "3px solid #f59e0b",
-            borderRadius: "2px 10px 10px 2px",
-            padding: "14px 20px",
-            marginBottom: 12,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              marginBottom: 8,
-            }}
-          >
-            <AuditOutlined style={{ color: "#f59e0b", fontSize: 14 }} />
-            <Text
-              strong
-              style={{
-                fontSize: 13,
-                color: "#d97706",
-                letterSpacing: 0.3,
-              }}
-            >
-              证据分析
-            </Text>
-          </div>
-          <Paragraph
-            style={{
-              margin: 0,
-              fontSize: 14,
-              lineHeight: 1.7,
-              color: "#1a1a2e",
-            }}
-          >
-            {msg.evidence.conclusion}
-          </Paragraph>
-          {msg.evidence.suggestions?.length > 0 && (
-            <div style={{ marginTop: 10 }}>
-              <Text strong style={{ fontSize: 12, color: "#92400e" }}>
-                建议：
-              </Text>
-              <ul style={{ margin: "4px 0 0 16px", padding: 0 }}>
-                {msg.evidence.suggestions.map((s, i) => (
-                  <li
-                    key={i}
-                    style={{ fontSize: 13, color: "#78350f", lineHeight: 1.6 }}
-                  >
-                    {s}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {msg.evidence.limitations?.length > 0 && (
-            <div style={{ marginTop: 8 }}>
-              <Text style={{ fontSize: 12, color: "#94a3b8" }}>
-                局限性: {msg.evidence.limitations.join("; ")}
-              </Text>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "flex-end",
-          paddingTop: 8,
-          borderTop: "1px solid #f0f2f5",
-        }}
-      >
-        <Text style={{ fontSize: 11.5, color: "#94a3b8", letterSpacing: 0.3 }}>
-          耗时 {((msg.elapsed_ms ?? 0) / 1000).toFixed(1)}s
-        </Text>
-      </div>
-    </div>
-  );
-};
-
-// ── Welcome Screen ─────────────────────────────────────
-
-const WelcomeScreen: React.FC<{ onSend: (text: string) => void }> = ({
-  onSend,
-}) => (
-  <div
-    className="welcome-bg"
-    style={{
-      flex: 1,
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: "48px 32px",
-      position: "relative",
-    }}
-  >
-    <div style={{ position: "relative", zIndex: 1, textAlign: "center" }}>
-      <div
-        className="animate-fade-up"
-        style={{
-          fontFamily: "var(--font-display)",
-          fontSize: 32,
-          fontWeight: 700,
-          color: "#1a1a2e",
-          marginBottom: 8,
-          letterSpacing: -0.5,
-        }}
-      >
-        Dataset Intelligence Platform
-      </div>
-      <div
-        className="animate-fade-up stagger-1"
-        style={{
-          fontSize: 15,
-          color: "#64748b",
-          marginBottom: 48,
-          lineHeight: 1.6,
-        }}
-      >
-        上传数据，用自然语言提问，获取洞察
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          gap: 16,
-          maxWidth: 720,
-          width: "100%",
-        }}
-      >
-        {SUGGESTIONS.map((s, i) => (
-          <div
-            key={s.text}
-            className={`suggestion-card animate-fade-up stagger-${i + 2}`}
-            style={{ flex: 1, cursor: "default" }}
-          >
-            <div
-              style={{
-                fontSize: 22,
-                color: "#0d9488",
-                marginBottom: 12,
-              }}
-            >
-              {s.icon}
-            </div>
-            <div
-              style={{
-                fontSize: 11,
-                color: "#94a3b8",
-                marginBottom: 6,
-                letterSpacing: 0.5,
-              }}
-            >
-              {s.desc}
-            </div>
-            <div
-              style={{
-                fontSize: 14,
-                color: "#1a1a2e",
-                lineHeight: 1.5,
-              }}
-            >
-              {s.text}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  </div>
-);
+const { Text } = Typography;
 
 // ── Chat component ─────────────────────────────────────
 
-interface ChatProps {
-  sessionId: string | null;
-  onNewSession: () => void;
-  onSessionChange: (id: string) => void;
+interface OutletContext {
+  handleSessionChange: (id: string) => void;
+  handleNewSession: () => void;
 }
 
-const Chat: React.FC<ChatProps> = ({
-  sessionId,
-  onNewSession,
-  onSessionChange,
-}) => {
-  const [messages, setMessages] = useState<MessageInfo[]>([]);
+const Chat: React.FC = () => {
+  const { sessionId: urlSessionId } = useParams<{ sessionId: string }>();
+  const { handleSessionChange, handleNewSession } =
+    useOutletContext<OutletContext>();
+  const sessionId = urlSessionId || null;
+
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [progressLabel, setProgressLabel] = useState<string | undefined>(undefined);
-  const [initLoading, setInitLoading] = useState(true);
-  const [datasets, setDatasets] = useState<DatasetPreview[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const loadingRef = useRef(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef(input);
   inputRef.current = input;
+
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
 
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, []);
+  const {
+    messages,
+    loading,
+    progressLabel,
+    initLoading,
+    messagesEndRef,
+    handleSend: rawSend,
+  } = useChat(sessionId, handleSessionChange);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, loading, scrollToBottom]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const init = async () => {
-      setInitLoading(true);
-      try {
-        let sid = sessionId;
-        if (!sid) {
-          const res = await createSession();
-          if (controller.signal.aborted) return;
-          sid = res.session_id;
-          onSessionChange(sid);
-        } else {
-          const res = await getSessionMessages(sid);
-          if (controller.signal.aborted) return;
-          setMessages(res.messages);
-        }
-      } catch (err) {
-        if (!controller.signal.aborted) {
-          console.error("Init error:", err);
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setInitLoading(false);
-        }
-      }
-    };
-    init();
-    return () => controller.abort();
-  }, [sessionId, onSessionChange]);
-
-  const sendAbortRef = useRef<AbortController | null>(null);
+  const {
+    datasets,
+    uploading,
+    dragging,
+    fileInputRef,
+    handleRemoveDataset,
+    handleFileInputChange,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+  } = useFileUpload(sessionIdRef);
 
   const handleSend = useCallback(
-    async (text?: string) => {
-      const question = (text ?? inputRef.current).trim();
-      const sid = sessionIdRef.current;
-      if (!question || loadingRef.current || !sid) return;
-
-      setInput("");
-      loadingRef.current = true;
-      setLoading(true);
-      setProgressLabel("AI 正在分析您的问题");
-
-      let finished = false;
-      const finish = () => {
-        if (finished) return;
-        finished = true;
-        loadingRef.current = false;
-        setLoading(false);
-        setProgressLabel(undefined);
-      };
-
-      // Safety timeout: if stream hangs for 3 minutes, force finish
-      const safetyTimer = setTimeout(finish, 180000);
-
-      const controller = sendChatStream(
-        { question, session_id: sid },
-        (event) => {
-          if (event.type === "progress" && event.label) {
-            setProgressLabel(`${event.label}...`);
-          }
-        },
-        (err) => {
-          clearTimeout(safetyTimer);
-          message.error(err.message || "请求失败，请稍后重试");
-          finish();
-        },
-        async () => {
-          clearTimeout(safetyTimer);
-          try {
-            const updated = await getSessionMessages(sid);
-            setMessages(updated.messages);
-          } catch {
-            // ignore
-          }
-          finish();
-        },
-      );
-      sendAbortRef.current = controller;
-    },
-    []
+    (text?: string) => rawSend(text, inputRef),
+    [rawSend],
   );
-
-  // Cleanup send request on unmount
-  useEffect(() => {
-    return () => sendAbortRef.current?.abort();
-  }, []);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -602,70 +71,8 @@ const Chat: React.FC<ChatProps> = ({
         handleSend();
       }
     },
-    [handleSend]
+    [handleSend],
   );
-
-  // ── Upload handlers ───────────────────────────────────
-
-  const handleFileUpload = useCallback(
-    async (file: File) => {
-      const sid = sessionIdRef.current;
-      if (!sid || uploading) return;
-
-      setUploading(true);
-      try {
-        const res = await uploadDataset(file, sid);
-        setDatasets((prev) => [...prev, ...res.datasets]);
-        message.success(`已导入 ${res.count} 个数据集`);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "上传失败";
-        message.error(msg);
-      } finally {
-        setUploading(false);
-      }
-    },
-    [uploading]
-  );
-
-  const handleRemoveDataset = useCallback(async (tableName: string) => {
-    try {
-      await deleteDataset(tableName);
-      setDatasets((prev) => prev.filter((d) => d.table_name !== tableName));
-    } catch {
-      message.error("删除失败");
-    }
-  }, []);
-
-  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      handleFileUpload(file);
-      e.target.value = "";
-    }
-  };
-
-  // ── Drag-drop ─────────────────────────────────────────
-
-  const [dragging, setDragging] = useState(false);
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      handleFileUpload(file);
-    }
-  };
 
   if (initLoading) {
     return (
@@ -701,7 +108,7 @@ const Chat: React.FC<ChatProps> = ({
         <Button
           type="primary"
           icon={<RocketOutlined />}
-          onClick={onNewSession}
+          onClick={handleNewSession}
           style={{
             background: "linear-gradient(135deg, #0d9488, #0284c7)",
             border: "none",
@@ -727,6 +134,7 @@ const Chat: React.FC<ChatProps> = ({
         background: "#f8f9fc",
       }}
     >
+      {/* Messages area */}
       <div
         style={{
           flex: 1,
@@ -775,6 +183,7 @@ const Chat: React.FC<ChatProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Input area */}
       <div
         className="glass-input-area"
         style={{ padding: "16px 32px 20px" }}

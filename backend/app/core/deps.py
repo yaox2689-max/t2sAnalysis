@@ -15,11 +15,14 @@ Usage:
 
 import asyncio
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from langgraph.graph.state import CompiledStateGraph
 
 from app.core.config import settings
+from app.core.llm_client import LLMClient
+from app.core.protocols import DatasetRegistryProtocol
+from app.core.utils import create_llm_client
 from app.tools.chart import ChartTool
 from app.tools.evidence_analyzer import EvidenceAnalyzer
 from app.tools.insight import InsightTool
@@ -71,19 +74,23 @@ class AppContext:
 
             # 3. LLM client config
             api_key = settings.LLM_API_KEY
-            model = settings.LLM_MODEL
             base_url = settings.LLM_BASE_URL
 
             if not api_key:
                 logger.warning({"event": "llm_api_key_missing"})
 
+            llm_client = LLMClient(
+                client=create_llm_client(api_key, base_url),
+                model=settings.LLM_MODEL,
+            )
+
             # 4. Task Analyzer
             from app.services.task_analyzer import TaskAnalyzer
-            analyzer = TaskAnalyzer(api_key=api_key, model=model, base_url=base_url)
+            analyzer = TaskAnalyzer(llm_client=llm_client)
 
             # 5. SQL Generator
             from app.agents.sql_generator import SQLGenerator
-            generator = SQLGenerator(api_key=api_key, model=model, base_url=base_url)
+            generator = SQLGenerator(llm_client=llm_client)
 
             # 6. Validator
             from app.tools.sql_validator import SQLValidator
@@ -98,7 +105,7 @@ class AppContext:
             # Use a minimal adapter that wraps the registry
             retriever_adapter = _RegistryRetrieverAdapter(bootstrap.registry)
             reflection = ReflectionLoop(
-                api_key=api_key, model=model, base_url=base_url,
+                llm_client=llm_client,
                 sql_generator=generator, schema_retriever=retriever_adapter,
             )
 
@@ -138,8 +145,8 @@ class AppContext:
 
             # 10. Tools
             self.chart_tool = ChartTool()
-            self.insight_tool = InsightTool(api_key=api_key, model=model, base_url=base_url)
-            self.evidence_analyzer = EvidenceAnalyzer(api_key=api_key, model=model, base_url=base_url)
+            self.insight_tool = InsightTool(llm_client=llm_client)
+            self.evidence_analyzer = EvidenceAnalyzer(llm_client=llm_client)
 
             self._initialized = True
             logger.info({"event": "app_init_complete"})
@@ -155,14 +162,14 @@ class _RegistryRetrieverAdapter:
     the new registry.
     """
 
-    def __init__(self, registry: object) -> None:
+    def __init__(self, registry: DatasetRegistryProtocol) -> None:
         self._registry = registry
 
-    async def retrieve(self, question: str, **kwargs) -> object:
+    async def retrieve(self, question: str, **kwargs) -> Any:
         """Re-retrieve schema context using the registry."""
         from app.models.task import SchemaContext
 
-        catalog = self._registry.get_catalog(question=question, top_k=10)
+        catalog = await self._registry.get_catalog(question=question, top_k=10)
         return SchemaContext(
             tables=[t.table_name for t in catalog.tables],
             columns={

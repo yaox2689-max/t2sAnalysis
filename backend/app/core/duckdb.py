@@ -14,7 +14,7 @@ Usage:
 
 import logging
 import os
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger("t2s_analysis")
 
@@ -27,7 +27,7 @@ class DuckDBEngine:
 
     def __init__(self, db_path: Optional[str] = None) -> None:
         self._db_path = db_path or os.path.join(_DATA_DIR, "analysis.duckdb")
-        self._conn: object = None  # duckdb.DuckDBPyConnection
+        self._conn: Any = None  # duckdb.DuckDBPyConnection
 
     @property
     def conn(self):
@@ -63,7 +63,7 @@ class DuckDBEngine:
         rows = self.conn.execute("SHOW TABLES").fetchall()
         return [r[0] for r in rows]
 
-    def execute(self, sql: str) -> object:
+    def execute(self, sql: str) -> Any:
         """Execute SQL and return the DuckDB result object.
 
         For SELECT queries, use .fetchdf() to get a DataFrame or

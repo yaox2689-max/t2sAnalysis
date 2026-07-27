@@ -1,26 +1,27 @@
 """Tests for TaskAnalyzer — parsing, fallback, integration with mock LLM."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.services.task_analyzer import TaskAnalyzer
 
+from .conftest import mock_llm_response
+
 
 @pytest.fixture
 def analyzer():
-    return TaskAnalyzer(api_key="test-key", model="test-model", base_url="http://fake")
+    from unittest.mock import MagicMock
+
+    from app.core.llm_client import LLMClient
+    mock_client = MagicMock()
+    llm = LLMClient(client=mock_client, model="test-model")
+    return TaskAnalyzer(llm_client=llm)
 
 
 def _mock_response(content: str):
     """Build a mock OpenAI response object."""
-    msg = MagicMock()
-    msg.content = content
-    choice = MagicMock()
-    choice.message = msg
-    resp = MagicMock()
-    resp.choices = [choice]
-    return resp
+    return mock_llm_response(content)
 
 
 class TestParse:
@@ -72,7 +73,7 @@ async def test_analyze_calls_llm_and_returns_taskplan(analyzer):
         '"requires_insight": false}'
     )
 
-    with patch.object(analyzer.client.chat.completions, "create", new=AsyncMock(return_value=fake)):
+    with patch.object(analyzer._llm_client._client.chat.completions, "create", new=AsyncMock(return_value=fake)):
         plan = await analyzer.analyze("最近30天各品类销售额趋势")
 
     assert plan.task_type == "trend_analysis"
@@ -85,7 +86,7 @@ async def test_analyze_calls_llm_and_returns_taskplan(analyzer):
 @pytest.mark.asyncio
 async def test_analyze_fallback_on_invalid_llm_response(analyzer):
     with patch.object(
-        analyzer.client.chat.completions,
+        analyzer._llm_client._client.chat.completions,
         "create",
         new=AsyncMock(return_value=_mock_response("sorry i cannot do that")),
     ):

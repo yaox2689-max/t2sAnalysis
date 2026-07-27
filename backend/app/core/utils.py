@@ -2,12 +2,61 @@
 
 from __future__ import annotations
 
+import re
+from typing import TYPE_CHECKING
+
 import httpx
 from openai import AsyncOpenAI
 
-from app.models.query import QueryResult
+if TYPE_CHECKING:
+    from app.models.query import QueryResult
 
 _PREVIEW_MAX_ROWS = 20
+
+
+# ── Error handling ──────────────────────────────────────
+
+
+def truncate_error(exc: Exception, limit: int = 200) -> str:
+    """Return a truncated string representation of an exception.
+
+    Args:
+        exc: The exception to format.
+        limit: Maximum number of characters to return.
+    """
+    return str(exc)[:limit]
+
+
+# ── JSON parsing from LLM responses ─────────────────────
+
+
+def parse_llm_json(raw: str, extract_from_fence: bool = True) -> dict | list | None:
+    """Parse a JSON object/list from LLM response text.
+
+    Args:
+        raw: Raw text from LLM response.
+        extract_from_fence: If True, first try to extract JSON from
+            markdown code fences before parsing the whole string.
+
+    Returns:
+        Parsed JSON data, or ``None`` if parsing fails.
+    """
+    if not raw or not raw.strip():
+        return None
+
+    text = raw.strip()
+
+    if extract_from_fence:
+        match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
+        if match:
+            text = match.group(1).strip()
+
+    try:
+        import json
+
+        return json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return None
 
 
 # ── NaN / Inf sanitisation ──────────────────────────────
@@ -34,7 +83,7 @@ def create_llm_client(
     api_key: str,
     base_url: str | None = None,
     timeout: httpx.Timeout = LLM_TIMEOUT,
-    http_client: object | None = None,
+    http_client: httpx.AsyncClient | None = None,
 ) -> AsyncOpenAI:
     """Create an ``AsyncOpenAI`` client with unified timeout settings."""
     kwargs: dict = {"api_key": api_key, "timeout": timeout}

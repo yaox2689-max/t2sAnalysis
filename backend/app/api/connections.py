@@ -13,8 +13,10 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.bootstrap import bootstrap, ensure_bootstrap
 from app.core.auth import get_current_user
 from app.core.database import db
+from app.core.utils import truncate_error
 from app.services.auth_service import UserOut
 from app.services.credential_encryption import decrypt_password, encrypt_password
 from app.tools.external_db_executor import ExternalDBExecutor
@@ -24,14 +26,6 @@ logger = logging.getLogger("t2s_analysis")
 router = APIRouter(prefix="/api/connections", tags=["connections"])
 
 _executor = ExternalDBExecutor()
-
-
-async def _ensure_bootstrap():
-    """Ensure bootstrap is initialized."""
-    from app.bootstrap import bootstrap
-    if not bootstrap._initialized:
-        await bootstrap.run()
-    return bootstrap
 
 
 class ConnectionRequest(BaseModel):
@@ -57,7 +51,7 @@ class ConnectionInfo(BaseModel):
 @router.post("/test")
 async def test_connection(req: ConnectionRequest, user: UserOut = Depends(get_current_user)):
     """Test a MySQL connection without saving."""
-    await _ensure_bootstrap()
+    await ensure_bootstrap()
     cfg = {
         "host": req.host, "port": req.port, "database": req.database,
         "username": req.username, "password": req.password,
@@ -66,13 +60,13 @@ async def test_connection(req: ConnectionRequest, user: UserOut = Depends(get_cu
         tables = await _executor.test_connection(cfg)
         return {"success": True, "tables": tables, "count": len(tables)}
     except Exception as exc:
-        return {"success": False, "error": str(exc)[:200]}
+        return {"success": False, "error": truncate_error(exc)}
 
 
 @router.post("")
 async def create_connection(req: ConnectionRequest, user: UserOut = Depends(get_current_user)):
     """Save a MySQL connection and register its tables."""
-    bootstrap = await _ensure_bootstrap()
+    await ensure_bootstrap()
 
     cfg = {
         "host": req.host, "port": req.port, "database": req.database,
@@ -83,13 +77,13 @@ async def create_connection(req: ConnectionRequest, user: UserOut = Depends(get_
     try:
         tables = await _executor.test_connection(cfg)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"连接失败: {str(exc)[:200]}")
+        raise HTTPException(status_code=400, detail=f"连接失败: {truncate_error(exc)}")
 
     # Introspect tables
     try:
         columns_map = await _executor.introspect_tables(cfg)
     except Exception as exc:
-        logger.warning({"event": "introspect_tables_failed", "error": str(exc)[:200]})
+        logger.warning({"event": "introspect_tables_failed", "error": truncate_error(exc)})
         columns_map = {}
 
     conn_id = str(uuid.uuid4())
@@ -136,7 +130,7 @@ async def create_connection(req: ConnectionRequest, user: UserOut = Depends(get_
 @router.get("")
 async def list_connections(user: UserOut = Depends(get_current_user)):
     """List user's MySQL connections."""
-    bootstrap = await _ensure_bootstrap()
+    await ensure_bootstrap()
     rows = await db.execute(
         "SELECT id, display_name, host, port, `database`, status, created_at "
         "FROM mysql_connections WHERE user_id = :uid ORDER BY created_at DESC",
@@ -164,7 +158,7 @@ async def list_connections(user: UserOut = Depends(get_current_user)):
 @router.delete("/{connection_id}")
 async def delete_connection(connection_id: str, user: UserOut = Depends(get_current_user)):
     """Delete a connection and unregister its tables."""
-    bootstrap = await _ensure_bootstrap()
+    await ensure_bootstrap()
 
     rows = await db.execute(
         "SELECT id, host, port, `database`, username, encrypted_password "
@@ -192,7 +186,7 @@ async def delete_connection(connection_id: str, user: UserOut = Depends(get_curr
             "database": row["database"], "username": row["username"], "password": pw,
         })
     except Exception as exc:
-        logger.warning({"event": "invalidate_engine_failed", "error": str(exc)[:200]})
+        logger.warning({"event": "invalidate_engine_failed", "error": truncate_error(exc)})
 
     # Delete from MySQL
     await db.execute("DELETE FROM mysql_connections WHERE id = :id", {"id": connection_id})
