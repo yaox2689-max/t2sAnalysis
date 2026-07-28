@@ -65,7 +65,7 @@ async def retrieve_schema_node(
         registry: DatasetRegistry
         prompt_builder: PromptBuilder
 
-        catalog = await registry.get_catalog(session_id=session_id, user_id=user_id, question=question, top_k=10)
+        catalog = await registry.get_catalog(session_id=session_id, user_id=user_id, question=question, top_k=30)
         prompt_text = await prompt_builder.build_prompt(catalog)
         available_tables = [t.table_name for t in catalog.tables]
 

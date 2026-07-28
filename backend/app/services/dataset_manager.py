@@ -85,6 +85,9 @@ class DatasetManager:
     ) -> list[DatasetInfo]:
         """Import a file into DuckDB. Auto-detects format.
 
+        If a table with the same name already exists, it is replaced
+        (old table dropped, metadata updated).
+
         Lifecycle: uploading → profile → ready → persist to MySQL.
         Returns a list of DatasetInfo (one per sheet for Excel, one for CSV).
         """
@@ -95,9 +98,12 @@ class DatasetManager:
         if file_size > MAX_FILE_SIZE_BYTES:
             raise ValueError(f"File too large: {file_size} bytes (max {MAX_FILE_SIZE_BYTES})")
 
+        # Pre-compute table names and dedup BEFORE importing
         if ext in _EXCEL_EXTENSIONS:
+            await self._pre_dedup_excel(file_path, original_name)
             datasets = await self._import_excel(file_path, original_name, session_id, file_size)
         elif ext in _CSV_EXTENSIONS:
+            await self._pre_dedup_csv(original_name)
             datasets = [await self._import_csv(file_path, original_name, session_id, file_size)]
         else:
             raise ValueError(f"Unsupported file format: {ext}")
@@ -413,6 +419,35 @@ class DatasetManager:
     def _drop_table_sync(self, table_name: str) -> None:
         """DROP TABLE IF EXISTS (sync, blocking)."""
         self._engine.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+
+    async def _dedup_if_exists(self, table_name: str) -> None:
+        """Drop old table and clean up registry/MySQL if same name exists."""
+        existing_tables = await asyncio.to_thread(self._engine.tables)
+        if table_name not in existing_tables:
+            return
+
+        logger.info({"event": "dedup_replace", "table": table_name})
+        await asyncio.to_thread(self._drop_table_sync, table_name)
+        if self._registry:
+            self._registry.unregister(table_name)
+        await self._update_status_mysql(table_name, "deleted")
+
+    async def _pre_dedup_excel(self, file_path: str, original_name: str) -> None:
+        """Drop old tables for each sheet before importing an Excel file."""
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+            for sheet_name in wb.sheetnames:
+                table_name = generate_table_name(original_name, sheet_name)
+                await self._dedup_if_exists(table_name)
+            wb.close()
+        except Exception as exc:
+            logger.warning({"event": "pre_dedup_excel_failed", "error": truncate_error(exc)})
+
+    async def _pre_dedup_csv(self, original_name: str) -> None:
+        """Drop old table before importing a CSV file."""
+        table_name = generate_table_name(original_name)
+        await self._dedup_if_exists(table_name)
 
     @staticmethod
     def _pandas_to_sql_type(pd_type: str) -> str:

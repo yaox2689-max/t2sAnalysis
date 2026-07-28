@@ -76,16 +76,15 @@ def clean_column_names(names: list[str]) -> list[str]:
 
 
 def generate_table_name(file_name: str, sheet_name: Optional[str] = None) -> str:
-    """Generate a readable DuckDB table name from file/sheet name.
+    """Generate a deterministic DuckDB table name from file/sheet name.
 
-    Format: {cleaned_file}_{cleaned_sheet}_{4-char-uuid}
+    Format: {cleaned_file}_{cleaned_sheet}
+    Same file always produces the same table name, enabling re-upload replacement.
+
     Examples:
-        "6月销售报表.xlsx" → "6_e_8_a3f1"
-        "sales.xlsx" Sheet "Q1" → "sales_q1_b7c2"
-        "customers.csv" → "customers_d4e5"
+        "公司品牌销售报表.xlsx" Sheet "品牌销售明细" → "公司品牌销售报表_品牌销售明细"
+        "sales.csv" → "sales"
     """
-    import uuid
-
     # Remove extension
     base = file_name.rsplit(".", 1)[0] if "." in file_name else file_name
 
@@ -102,6 +101,4 @@ def generate_table_name(file_name: str, sheet_name: Optional[str] = None) -> str
         if sheet_cleaned:
             cleaned = f"{cleaned}_{sheet_cleaned}"
 
-    # Add 4-char UUID suffix for uniqueness
-    suffix = uuid.uuid4().hex[:4]
-    return f"{cleaned}_{suffix}"
+    return cleaned

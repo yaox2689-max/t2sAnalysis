@@ -85,12 +85,16 @@ def create_llm_client(
     timeout: httpx.Timeout = LLM_TIMEOUT,
     http_client: httpx.AsyncClient | None = None,
 ) -> AsyncOpenAI:
-    """Create an ``AsyncOpenAI`` client with unified timeout settings."""
-    kwargs: dict = {"api_key": api_key, "timeout": timeout}
+    """Create an ``AsyncOpenAI`` client with unified timeout settings.
+
+    Creates a default httpx client that bypasses system proxy settings
+    to avoid Windows proxy interference with LLM API calls.
+    """
+    if http_client is None:
+        http_client = httpx.AsyncClient(proxy=None)
+    kwargs: dict = {"api_key": api_key, "timeout": timeout, "http_client": http_client}
     if base_url:
         kwargs["base_url"] = base_url
-    if http_client is not None:
-        kwargs["http_client"] = http_client
     return AsyncOpenAI(**kwargs)
 
 

@@ -106,17 +106,12 @@ class TestGenerateTableName:
     def test_simple_csv(self):
         """Simple CSV file generates expected format."""
         name = generate_table_name("customers.csv")
-        assert name.startswith("customers_")
-        # Should end with 4-char hex suffix
-        suffix = name.split("_")[-1]
-        assert len(suffix) == 4
-        assert all(c in "0123456789abcdef" for c in suffix)
+        assert name == "customers"
 
     def test_excel_with_sheet(self):
         """Excel file with sheet name includes both in table name."""
         name = generate_table_name("sales.xlsx", sheet_name="Q1")
-        assert "sales" in name
-        assert "q1" in name
+        assert name == "sales_q1"
 
     def test_chinese_filename(self):
         """Chinese characters in filename are preserved."""
@@ -126,10 +121,10 @@ class TestGenerateTableName:
     def test_no_extension(self):
         """File without extension still works."""
         name = generate_table_name("data_table")
-        assert name.startswith("data_table_")
+        assert name == "data_table"
 
-    def test_unique_names(self):
-        """Two calls produce different names (UUID suffix)."""
+    def test_deterministic_names(self):
+        """Same input always produces same name (enables re-upload replacement)."""
         name1 = generate_table_name("data.csv")
         name2 = generate_table_name("data.csv")
-        assert name1 != name2
+        assert name1 == name2
